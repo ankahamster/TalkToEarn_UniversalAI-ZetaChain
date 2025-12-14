@@ -1,2 +1,0 @@
-# TalkToEarn_UniversalAI-ZetaChain
-基于AI模型RAG生成的去中心化内容分享平台
