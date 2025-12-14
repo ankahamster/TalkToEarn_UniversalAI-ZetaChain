@@ -1,10 +1,79 @@
 import { Navigation } from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowRight, Database, Brain, Shield, Sparkles } from "lucide-react";
+import { ArrowRight, Database, Brain, Shield, Sparkles, Wallet, CheckCircle, Copy } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useWeb3 } from "@/hooks/useWeb3";
+import { switchToChain, CHAIN_CONFIGS } from "@/lib/chains";
+import { useState, useEffect } from "react";
 
 const Index = () => {
+  const { provider, isConnected, account, connect } = useWeb3();
+  const [currentChain, setCurrentChain] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // 连接钱包并强制切换到 ZetaChain
+  const handleConnect = async () => {
+    try {
+      await connect();
+      // 强制切换到 ZetaChain Testnet
+      await switchToChain('zetachain');
+      // 等待网络切换完成
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 刷新页面以更新 provider
+      window.location.reload();
+    } catch (error: any) {
+      console.error('连接钱包失败:', error);
+      alert(`连接钱包失败: ${error.message || '未知错误'}`);
+    }
+  };
+
+  // 复制地址到剪贴板
+  const handleCopyAddress = async () => {
+    if (account) {
+      try {
+        await navigator.clipboard.writeText(account);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (error) {
+        console.error('复制失败:', error);
+      }
+    }
+  };
+
+  // 获取当前网络
+  useEffect(() => {
+    if (!provider || !isConnected) {
+      setCurrentChain(null);
+      return;
+    }
+
+    const updateCurrentChain = async () => {
+      try {
+        const network = await provider.getNetwork();
+        const chainId = network.chainId.toString();
+        const chain = Object.keys(CHAIN_CONFIGS).find((key) => {
+          const config = CHAIN_CONFIGS[key as any];
+          const configChainId = config.chainId.replace('0x', '');
+          const currentChainIdHex = BigInt(chainId).toString(16);
+          return config.chainId === `0x${currentChainIdHex}` || 
+                 config.chainId === chainId ||
+                 (configChainId && BigInt(`0x${configChainId}`) === BigInt(chainId));
+        });
+
+        if (chain) {
+          setCurrentChain(CHAIN_CONFIGS[chain as any].chainName);
+        } else {
+          setCurrentChain('未知网络');
+        }
+      } catch (error) {
+        console.error('获取当前网络失败:', error);
+        setCurrentChain(null);
+      }
+    };
+
+    updateCurrentChain();
+  }, [provider, isConnected]);
   const features = [
     {
       icon: Database,
@@ -63,6 +132,44 @@ const Index = () => {
                   体验 AI 对话
                 </Button>
               </Link>
+            </div>
+
+            {/* 钱包连接状态 */}
+            <div className="mt-8 flex justify-center items-center gap-2">
+              {isConnected && account ? (
+                <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-medium text-green-900">已连接</span>
+                  <Wallet className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-mono text-gray-700">
+                    {account.slice(0, 6)}...{account.slice(-4)}
+                  </span>
+                  <button
+                    onClick={handleCopyAddress}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                    title="复制地址"
+                  >
+                    {copied ? (
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-gray-500" />
+                    )}
+                  </button>
+                  {currentChain && (
+                    <span className="text-xs text-gray-500">
+                      网络: {currentChain}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  onClick={handleConnect}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Wallet className="w-4 h-4" />
+                  连接 MetaMask
+                </Button>
+              )}
             </div>
           </div>
 

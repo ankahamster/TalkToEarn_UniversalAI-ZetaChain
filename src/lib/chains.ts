@@ -3,7 +3,8 @@
  * 仅支持 ZetaChain 和 BSC
  */
 
-import { Chain } from '../../../../../zeta/Monallo-SimpleDemo/SimpleDemo/types/intent'
+// 本地定义Chain类型
+export type Chain = 'zetachain' | 'bsc' | 'base';
 
 export interface ChainConfig {
   chainId: string
@@ -39,6 +40,17 @@ export const CHAIN_CONFIGS: Record<Chain, ChainConfig> = {
     },
     rpcUrls: ['https://bsc-dataseed.binance.org'],
     blockExplorerUrls: ['https://bscscan.com'],
+  },
+  base: {
+    chainId: '0x2105', // 8453 in hex
+    chainName: 'Base',
+    nativeCurrency: {
+      name: 'ETH',
+      symbol: 'ETH',
+      decimals: 18,
+    },
+    rpcUrls: ['https://mainnet.base.org'],
+    blockExplorerUrls: ['https://basescan.org'],
   },
 }
 

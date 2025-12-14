@@ -2,8 +2,8 @@
   "test0": {
     "password_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
     "coin_balance": 1.0000010000000008,
-    "total_earned": 1.3000000000000003e-05,
-    "total_spent": 1.2000000000000002e-05,
+    "total_earned": 1.4000000000000003e-05,
+    "total_spent": 1.3000000000000003e-05,
     "registration_time": "2025-11-27T00:40:42.582874",
     "uploaded_files": [
       "20251127004057_test0"

@@ -3,10 +3,12 @@ import os
 import json
 import numpy as np
 from dotenv import load_dotenv
+import sqlite3
 
 # 加载.env文件中的环境变量
 load_dotenv()
 from flask import Flask, request, jsonify, Response, render_template, session, redirect, url_for
+from flask_socketio import SocketIO, emit
 import chardet
 import time
 from langchain_core.documents import Document
@@ -29,12 +31,16 @@ from langchain_community.chat_models import ChatTongyi
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
 
+# 初始化SocketIO，启用CORS支持
+socketio = SocketIO(app, cors_allowed_origins="*")
+
 # ==================== 文件路径配置 ====================
 UPLOAD_FOLDER = 'USER_DATA'
 SHARED_FOLDER = 'SHARED_CONTENT'
 USER_DB_FILE = 'users.json'
 FILES_DB_FILE = 'files.json'
 TRANSACTIONS_DB_FILE = 'transactions.json'
+SQLITE_DB_FILE = 'talktoearn.db'
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SHARED_FOLDER, exist_ok=True)
@@ -58,17 +64,202 @@ llm = ChatTongyi(
 
 vector_store = None
 
+# ==================== 数据库初始化 ====================
+
+def init_db():
+    """初始化SQLite数据库并创建表"""
+    conn = sqlite3.connect(SQLITE_DB_FILE)
+    cursor = conn.cursor()
+    
+    # 创建用户表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        user_id TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        coin_balance REAL DEFAULT 1.0,
+        total_earned REAL DEFAULT 0.0,
+        total_spent REAL DEFAULT 0.0,
+        registration_time TEXT NOT NULL,
+        wallet_account TEXT UNIQUE
+    )
+    ''')
+    
+    # 创建用户上传文件表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS uploaded_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        file_id TEXT NOT NULL,
+        upload_time TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+    )
+    ''')
+    
+    # 创建用户引用文件表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS referenced_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        file_id TEXT NOT NULL,
+        question TEXT NOT NULL,
+        reward REAL NOT NULL,
+        timestamp TEXT NOT NULL,
+        similarity REAL NOT NULL,
+        weight REAL NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+def migrate_from_json_to_db():
+    """从JSON文件迁移数据到SQLite数据库"""
+    conn = sqlite3.connect(SQLITE_DB_FILE)
+    cursor = conn.cursor()
+    
+    # 检查用户表是否为空
+    cursor.execute('SELECT COUNT(*) FROM users')
+    if cursor.fetchone()[0] == 0:
+        # 从JSON文件加载用户数据
+        if os.path.exists(USER_DB_FILE):
+            with open(USER_DB_FILE, 'r', encoding='utf-8') as f:
+                users = json.load(f)
+            
+            # 迁移用户数据
+            for user_id, user_data in users.items():
+                # 插入用户基本信息
+                cursor.execute('''
+                INSERT INTO users (user_id, password_hash, coin_balance, total_earned, total_spent, registration_time, wallet_account)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    user_id,
+                    user_data['password_hash'],
+                    user_data['coin_balance'],
+                    user_data['total_earned'],
+                    user_data['total_spent'],
+                    user_data['registration_time'],
+                    user_data.get('wallet_account')  # 处理 JSON 中可能不存在的字段
+                ))
+                
+                # 迁移上传文件数据
+                for file_id in user_data['uploaded_files']:
+                    cursor.execute('''
+                    INSERT INTO uploaded_files (user_id, file_id)
+                    VALUES (?, ?)
+                    ''', (user_id, file_id))
+                
+                # 迁移引用文件数据
+                for ref_file in user_data['referenced_files']:
+                    cursor.execute('''
+                    INSERT INTO referenced_files (user_id, file_id, question, reward, timestamp, similarity, weight)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        user_id,
+                        ref_file['file_id'],
+                        ref_file['question'],
+                        ref_file['reward'],
+                        ref_file['timestamp'],
+                        ref_file['similarity'],
+                        ref_file['weight']
+                    ))
+    
+    conn.commit()
+    conn.close()
+
+# 初始化数据库
+init_db()
+# 从JSON迁移数据到数据库
+migrate_from_json_to_db()
+
 # ==================== 用户管理系统 ====================
 
-def load_users():
-    if os.path.exists(USER_DB_FILE):
-        with open(USER_DB_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+# 数据库连接辅助函数
+def get_db_connection():
+    conn = sqlite3.connect(SQLITE_DB_FILE)
+    conn.row_factory = sqlite3.Row  # 返回字典形式的行
+    return conn
 
-def save_users(users):
-    with open(USER_DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+# 替代原来的load_users函数
+def get_user(user_id):
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
+    return user
+
+# 替代原来的save_users函数
+def update_user(user_id, **kwargs):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 构建更新语句
+    columns = ', '.join([f"{col} = ?" for col in kwargs.keys()])
+    values = list(kwargs.values()) + [user_id]
+    
+    cursor.execute(f"UPDATE users SET {columns} WHERE user_id = ?", values)
+    conn.commit()
+    conn.close()
+
+def add_user(user_id, password_hash, coin_balance=1.0, total_earned=0.0, total_spent=0.0, registration_time=None, wallet_account=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if registration_time is None:
+        registration_time = datetime.now().isoformat()
+    
+    cursor.execute('''
+    INSERT INTO users (user_id, password_hash, coin_balance, total_earned, total_spent, registration_time, wallet_account)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, password_hash, coin_balance, total_earned, total_spent, registration_time, wallet_account))
+    
+    conn.commit()
+    conn.close()
+
+# 上传文件相关函数
+def add_uploaded_file(user_id, file_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+    INSERT INTO uploaded_files (user_id, file_id)
+    VALUES (?, ?)
+    ''', (user_id, file_id))
+    
+    conn.commit()
+    conn.close()
+
+def get_uploaded_files(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT file_id FROM uploaded_files WHERE user_id = ?', (user_id,))
+    files = [row[0] for row in cursor.fetchall()]
+    
+    conn.close()
+    return files
+
+# 引用文件相关函数
+def add_referenced_file(user_id, file_id, question, reward, timestamp, similarity, weight):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+    INSERT INTO referenced_files (user_id, file_id, question, reward, timestamp, similarity, weight)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, file_id, question, reward, timestamp, similarity, weight))
+    
+    conn.commit()
+    conn.close()
+
+def get_referenced_files(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM referenced_files WHERE user_id = ?', (user_id,))
+    refs = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    return refs
 
 def load_files():
     if os.path.exists(FILES_DB_FILE):
@@ -94,46 +285,45 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def register_user(user_id, password):
-    users = load_users()
+    conn = get_db_connection()
     
-    if user_id in users:
+    # 检查用户ID是否已存在
+    existing_user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+    if existing_user:
+        conn.close()
         return False, "用户ID已存在"
     
-    # 🎯 修复：确保新用户的所有统计字段都正确初始化
-    users[user_id] = {
-        'password_hash': hash_password(password),
-        'coin_balance': 1.0,
-        'total_earned': 0.0,  # 🎯 确保初始化为0
-        'total_spent': 0.0,   # 🎯 确保初始化为0
-        'registration_time': datetime.now().isoformat(),
-        'uploaded_files': [],
-        'referenced_files': []  # 🎯 确保这个字段存在
-    }
-    
-    save_users(users)
+    # 创建新用户
+    add_user(user_id, hash_password(password))
+    conn.close()
     return True, "注册成功"
 
 def authenticate_user(user_id, password):
-    users = load_users()
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
     
-    if user_id not in users:
+    if not user:
         return False, "用户不存在"
     
-    user_data = users[user_id]
-    if not isinstance(user_data, dict) or 'password_hash' not in user_data:
-        return False, "用户数据不完整，请重新注册"
-    
-    if user_data['password_hash'] != hash_password(password):
+    if user['password_hash'] != hash_password(password):
         return False, "密码错误"
     
     return True, "登录成功"
 
 def get_user_stats(user_id):
-    users = load_users()
-    if user_id not in users:
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+    
+    if not user:
+        conn.close()
         return None
     
-    user = users[user_id]
+    # 获取上传文件数量
+    uploaded_files_count = conn.execute('SELECT COUNT(*) FROM uploaded_files WHERE user_id = ?', (user_id,)).fetchone()[0]
+    conn.close()
+    
+    # 获取交易数据
     transactions = load_transactions()
     today = datetime.now().date()
     
@@ -154,17 +344,74 @@ def get_user_stats(user_id):
         'total_spent': user['total_spent'],
         'today_earned': today_earned,
         'today_references': today_references,
-        'uploaded_files_count': len(user['uploaded_files'])
+        'uploaded_files_count': uploaded_files_count
     }
+
+@app.route('/connect_wallet', methods=['POST'])
+def connect_wallet():
+    """处理钱包连接请求"""
+    data = request.get_json()
+    wallet_address = data.get('wallet_address')
+    
+    if not wallet_address:
+        return jsonify({'success': False, 'message': '钱包地址不能为空'})
+    
+    # 检查钱包地址是否已存在
+    conn = get_db_connection()
+    existing_user = conn.execute('SELECT * FROM users WHERE wallet_account = ?', (wallet_address,)).fetchone()
+    
+    if existing_user:
+        # 钱包地址已存在，返回用户信息
+        conn.close()
+        return jsonify({
+            'success': True,
+            'message': '钱包已连接',
+            'user_id': existing_user['user_id'],
+            'wallet_account': existing_user['wallet_account']
+        })
+    
+    # 钱包地址不存在，创建新用户
+    try:
+        # 使用钱包地址作为 user_id，默认密码 123456
+        user_id = wallet_address
+        password = '123456'
+        
+        # 检查 user_id 是否已存在
+        user_exists = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+        if user_exists:
+            conn.close()
+            return jsonify({'success': False, 'message': '用户ID已存在'})
+        
+        # 创建新用户
+        add_user(user_id, hash_password(password))
+        
+        # 更新钱包地址
+        update_user(user_id, wallet_account=wallet_address)
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': '钱包已连接并创建新用户',
+            'user_id': user_id,
+            'wallet_account': wallet_address,
+            'default_password': password  # 提示用户使用默认密码登录
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'message': f'连接钱包失败: {str(e)}'})
 
 
 def calculate_user_earnings(user_id):
     """重新计算用户的总收益 - 修复统计问题"""
-    users = load_users()
-    transactions = load_transactions()
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
     
-    if user_id not in users:
+    if not user:
+        conn.close()
         return 0.0, 0.0, 0
+    
+    transactions = load_transactions()
     
     total_earned = 0.0
     total_spent = 0.0
@@ -181,16 +428,14 @@ def calculate_user_earnings(user_id):
         elif tx['from_user'] == user_id and tx['type'] == 'spend':
             total_spent += tx['amount']
     
-    # 更新用户数据
-    users[user_id]['total_earned'] = total_earned
-    users[user_id]['total_spent'] = total_spent
-    
     # 确保余额正确
     initial_balance = 1.0  # 注册时赠送的1coin
     calculated_balance = initial_balance + total_earned - total_spent
-    users[user_id]['coin_balance'] = max(0, calculated_balance)  # 余额不能为负
+    calculated_balance = max(0, calculated_balance)  # 余额不能为负
     
-    save_users(users)
+    # 更新用户数据
+    update_user(user_id, total_earned=total_earned, total_spent=total_spent, coin_balance=calculated_balance)
+    conn.close()
     
     print(f"💰 用户 {user_id} 收益统计: 总收益={total_earned:.6f}, 总支出={total_spent:.6f}, 引用次数={reference_count}")
     
@@ -218,30 +463,37 @@ def record_transaction(tx_type, from_user, to_user, amount, file_owner=None, fil
     
     print(f"💾 记录交易: {tx_type}, 从 {from_user} 到 {to_user}, 金额 {amount:.8f}")
     
-    # 🎯 修复：重新加载最新的用户数据
-    users = load_users()
+    conn = get_db_connection()
     
-    if tx_type == 'spend' and from_user in users:
+    if tx_type == 'spend' and from_user:
         # 确保余额不会变成负数
-        new_balance = max(0, users[from_user]['coin_balance'] - amount)
-        users[from_user]['coin_balance'] = new_balance
-        users[from_user]['total_spent'] += amount
-        print(f"💸 用户 {from_user} 支出 {amount:.8f}, 新余额: {users[from_user]['coin_balance']:.6f}")
+        conn.execute('''
+        UPDATE users SET 
+            coin_balance = MAX(0, coin_balance - ?),
+            total_spent = total_spent + ?
+        WHERE user_id = ?
+        ''', (amount, amount, from_user))
+        print(f"💸 用户 {from_user} 支出 {amount:.8f}")
     
-    if tx_type == 'reward' and to_user in users:
-        users[to_user]['coin_balance'] += amount
-        users[to_user]['total_earned'] += amount
-        print(f"🎁 用户 {to_user} 获得奖励 {amount:.8f}, 新余额: {users[to_user]['coin_balance']:.6f}")
+    if tx_type == 'reward' and to_user:
+        conn.execute('''
+        UPDATE users SET 
+            coin_balance = coin_balance + ?,
+            total_earned = total_earned + ?
+        WHERE user_id = ?
+        ''', (amount, amount, to_user))
+        print(f"🎁 用户 {to_user} 获得奖励 {amount:.8f}")
     
-    # 🎯 修复：确保数据保存
-    save_users(users)
+    conn.commit()
+    conn.close()
     
-    # 🎯 修复：再次验证数据是否保存成功
-    users_after_save = load_users()
-    if to_user in users_after_save and tx_type == 'reward':
-        print(f"✅ 最终验证: 用户 {to_user} 余额已更新为 {users_after_save[to_user]['coin_balance']:.6f}")
-    if from_user in users_after_save and tx_type == 'spend':
-        print(f"✅ 最终验证: 用户 {from_user} 余额已更新为 {users_after_save[from_user]['coin_balance']:.6f}")
+    # 再次验证数据是否保存成功
+    if to_user and tx_type == 'reward':
+        user = get_user(to_user)
+        print(f"✅ 最终验证: 用户 {to_user} 余额已更新为 {user['coin_balance']:.6f}")
+    if from_user and tx_type == 'spend':
+        user = get_user(from_user)
+        print(f"✅ 最终验证: 用户 {from_user} 余额已更新为 {user['coin_balance']:.6f}")
 
 @app.route('/profile')
 def user_profile():
@@ -254,20 +506,17 @@ def user_profile():
     total_earned, total_spent, _ = calculate_user_earnings(user_id)
     
     # 重新加载最新数据
-    users = load_users()
+    user = get_user(user_id)
     
-    if user_id not in users:
+    if not user:
         return redirect('/logout')
     
-    user = users[user_id]
+    # 转换为字典格式以便模板使用
+    user_dict = dict(user)
     
-    # 确保用户数据结构完整
-    if 'total_earned' not in user:
-        user['total_earned'] = 0.0
-    if 'total_spent' not in user:
-        user['total_spent'] = 0.0
-    if 'referenced_files' not in user:
-        user['referenced_files'] = []
+    # 获取上传文件和引用文件
+    user_dict['uploaded_files'] = get_uploaded_files(user_id)
+    user_dict['referenced_files'] = get_referenced_files(user_id)
     
     transactions = load_transactions()
     
@@ -321,7 +570,7 @@ def user_profile():
     
     return render_template('profile.html',
                          user_id=user_id,
-                         user=user,
+                         user=user_dict,
                          transactions=recent_transactions,
                          reference_stats=reference_stats,
                          today_earned=today_earned,
@@ -354,10 +603,8 @@ def save_shared_file(user_id, filename, content, authorize_rag=True):
     
     save_files(files)
     
-    users = load_users()
-    if user_id in users:
-        users[user_id]['uploaded_files'].append(file_id)
-        save_users(users)
+    # 使用数据库添加上传文件记录
+    add_uploaded_file(user_id, file_id)
     
     if authorize_rag:
         try:
@@ -444,9 +691,11 @@ def calculate_reward_distribution(relevant_docs, total_cost):
     for file_id, sim_list in file_similarities.items():
         file_avg_similarities[file_id] = sum(sim_list) / len(sim_list)
         print(f"📈 文件 {file_id}: 平均相似度 {file_avg_similarities[file_id]:.3f}")
+        send_system_message('info', f"文件 {file_id}: 平均相似度 {file_avg_similarities[file_id]:.3f}")
     
     total_similarity = sum(file_avg_similarities.values())
     print(f"📊 总相似度: {total_similarity:.3f}")
+    send_system_message('info', f"总相似度: {total_similarity:.3f}")
     
     if total_similarity == 0:
         print("⚠️ 总相似度为0，无法分配奖励")
@@ -458,6 +707,7 @@ def calculate_reward_distribution(relevant_docs, total_cost):
         reward = weight * total_cost
         
         print(f"💰 文件 {file_id}: 权重 {weight:.3f}, 奖励 {reward:.8f} coin")
+        send_system_message('info', f"文件 {file_id}: 权重 {weight:.3f}, 奖励 {reward:.8f} coin")
         
         reward_distribution[file_id] = {
             'reward': reward,
@@ -467,6 +717,7 @@ def calculate_reward_distribution(relevant_docs, total_cost):
     
     total_distributed = sum(info['reward'] for info in reward_distribution.values())
     print(f"🎯 总分配金额: {total_distributed:.8f} coin")
+    send_system_message('info', f"总分配金额: {total_distributed:.8f} coin")
     
     return reward_distribution
 
@@ -475,26 +726,33 @@ def distribute_rewards(user_id, question, relevant_docs, total_cost):
     reward_distribution = calculate_reward_distribution(relevant_docs, total_cost)
     
     files = load_files()
-    users = load_users()
     transactions = load_transactions()
     
     distribution_info = {}
     total_distributed = 0.0
     
     print(f"🔍 开始奖励分配: 总成本 {total_cost}, 相关文档 {len(relevant_docs)} 个")
+    send_system_message('info', f"开始奖励分配: 总成本 {total_cost}, 相关文档 {len(relevant_docs)} 个")
+    
+    conn = get_db_connection()
     
     for file_id, reward_info in reward_distribution.items():
         if file_id and file_id in files:
             file_owner = files[file_id]['user_id']
             reward_amount = reward_info['reward']
             
-            if reward_amount > 0 and file_owner in users:
+            # 检查用户是否存在
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE user_id = ?', (file_owner,))
+            if cursor.fetchone() and reward_amount > 0:
                 try:
-                    # 🎯 修复：直接更新用户余额
-                    users[file_owner]['coin_balance'] += reward_amount
-                    if 'total_earned' not in users[file_owner]:
-                        users[file_owner]['total_earned'] = 0.0
-                    users[file_owner]['total_earned'] += reward_amount
+                    # 更新用户余额和总收益
+                    cursor.execute('''
+                    UPDATE users SET 
+                        coin_balance = coin_balance + ?,
+                        total_earned = total_earned + ?
+                    WHERE user_id = ?
+                    ''', (reward_amount, reward_amount, file_owner))
                     
                     # 记录奖励交易
                     reward_tx = {
@@ -531,16 +789,19 @@ def distribute_rewards(user_id, question, relevant_docs, total_cost):
                     total_distributed += reward_amount
                     
                     print(f"✅ 成功分配奖励: {file_owner} 获得 {reward_amount:.8f} coin")
+                    send_system_message('success', f"成功分配奖励: {file_owner} 获得 {reward_amount:.8f} coin")
                     
                 except Exception as e:
                     print(f"❌ 奖励分配失败 {file_id}: {e}")
     
-    # 🎯 修复：确保数据保存
+    # 确保数据保存
     save_files(files)
-    save_users(users)
     save_transactions(transactions)
+    conn.commit()
+    conn.close()
     
     print(f"🎯 奖励分配完成: 总分配金额 {total_distributed:.8f} coin")
+    send_system_message('success', f"奖励分配完成: 总分配金额 {total_distributed:.8f} coin")
     return distribution_info
 
 def extract_file_id_from_source(source):
@@ -562,12 +823,14 @@ def calculate_reward_distribution(relevant_docs, total_cost):
     """修复奖励计算函数 - 处理file_id为None的情况"""
     if not relevant_docs:
         print("⚠️ 没有相关文档，无法分配奖励")
+        send_system_message('warning', "没有相关文档，无法分配奖励")
         return {}
     
     similarities = []
     file_similarities = {}
     
     print(f"📊 开始计算奖励分布: 总成本 {total_cost}, 文档数 {len(relevant_docs)}")
+    send_system_message('info', f"开始计算奖励分布: 总成本 {total_cost}, 文档数 {len(relevant_docs)}")
     
     for doc in relevant_docs:
         file_id = doc.metadata.get('file_id')
@@ -580,6 +843,7 @@ def calculate_reward_distribution(relevant_docs, total_cost):
             print(f"🔄 计算奖励时提取file_id: {source} -> {file_id}")
         
         print(f"📄 文档 {file_id}: 相似度 {similarity:.3f}")
+        send_system_message('info', f"文档 {file_id}: 相似度 {similarity:.3f}")
         
         if file_id:
             if file_id not in file_similarities:
@@ -1047,16 +1311,26 @@ def enhanced_record_transaction(tx_type, from_user, to_user, amount, file_owner=
     save_transactions(transactions)
     
     # 更新用户余额
-    users = load_users()
-    if from_user in users and tx_type == 'spend':
-        users[from_user]['coin_balance'] -= amount
-        users[from_user]['total_spent'] += amount
+    conn = get_db_connection()
     
-    if to_user in users and tx_type == 'reward':
-        users[to_user]['coin_balance'] += amount
-        users[to_user]['total_earned'] += amount
-    
-    save_users(users)
+    if from_user and tx_type == 'spend':
+        conn.execute('''
+        UPDATE users SET 
+            coin_balance = coin_balance - ?,
+            total_spent = total_spent + ?
+        WHERE user_id = ?
+        ''', (amount, amount, from_user))
+
+    if to_user and tx_type == 'reward':
+        conn.execute('''
+        UPDATE users SET 
+            coin_balance = coin_balance + ?,
+            total_earned = total_earned + ?
+        WHERE user_id = ?
+        ''', (amount, amount, to_user))
+
+    conn.commit()
+    conn.close()
     
     # 记录详细日志
     log_transaction(transaction)
@@ -1206,8 +1480,12 @@ def ask_stream():
     if not question:
         return Response("data: 问题不能为空\n\n", mimetype='text/event-stream')
     
-    users = load_users()
-    if user_id not in users or users[user_id]['coin_balance'] < 0.000001:
+    # 检查用户余额
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
+    
+    if not user or user['coin_balance'] < 0.000001:
         return Response("data: Coin余额不足，请充值\n\n", mimetype='text/event-stream')
     
     def generate_response():
@@ -1220,8 +1498,14 @@ def ask_stream():
             conversation_cost = 0.000001
             record_transaction('spend', user_id, 'system', conversation_cost, None, None, question)
             
-            current_balance = users[user_id]['coin_balance'] - conversation_cost
-            print(f"💰 本次对话消耗 {conversation_cost:.6f} coin，当前余额: {current_balance:.6f} coin")
+            # 从数据库获取最新余额
+            conn = get_db_connection()
+            user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+            conn.close()
+            
+            if user:
+                current_balance = user['coin_balance']
+                print(f"💰 本次对话消耗 {conversation_cost:.6f} coin，当前余额: {current_balance:.6f} coin")
             
             if not vector_store or vector_store._collection.count() == 0:
                 print("知识库为空，直接基于模型知识回答...")
@@ -1582,12 +1866,17 @@ def reload_vector_store():
     
 @app.route('/health')
 def health_check():
+    # 获取用户数量
+    conn = get_db_connection()
+    user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+    conn.close()
+    
     status = {
         "ollama_status": "unknown",
         "embedding_model": "unknown", 
         "llm_model": "unknown",
         "vector_store": "empty" if not vector_store else f"loaded ({vector_store._collection.count()} docs)",
-        "user_count": len(load_users()),
+        "user_count": user_count,
         "file_count": len(load_files())
     }
     
@@ -1660,6 +1949,38 @@ def search_files(file_id=None, user_id=None, keyword=None):
     print(f"✅ 搜索完成，找到 {len(sorted_results)} 个文件")
     return sorted_results
 
+# WebSocket事件处理
+@socketio.on('connect', namespace='/ws')
+def handle_connect():
+    """处理WebSocket连接事件"""
+    print("客户端已连接到WebSocket")
+    emit('system_message', {'type': 'info', 'content': '后端WebSocket连接成功'})
+
+
+@app.route('/api/test_system_message', methods=['GET'])
+def test_system_message():
+    """测试接口：发送系统消息"""
+    message_content = request.args.get('content', '这是一条测试系统消息')
+    message_type = request.args.get('type', 'info')
+    
+    # 验证消息类型
+    valid_types = ['info', 'success', 'warning', 'error']
+    if message_type not in valid_types:
+        message_type = 'info'
+    
+    send_system_message(message_type, message_content)
+    return jsonify({'success': True, 'message': '系统消息已发送'})
+
+
+def send_system_message(message_type, content):
+    """发送系统消息给所有连接的客户端"""
+    socketio.emit('system_message', {
+        'type': message_type,
+        'content': content
+    }, namespace='/ws')
+    print(f"发送系统消息: [{message_type}] {content}")
+
+
 if __name__ == '__main__':
     print("🚀 启动多用户AI知识库平台...")
     print("📚 初始化向量库...")
@@ -1674,5 +1995,8 @@ if __name__ == '__main__':
     else:
         print("⚠️  向量库未加载，知识库为空")
     
-    print("🌐 启动Web服务器...")
-    app.run(host='127.0.0.1', port=5001, debug=True)
+    # 发送启动消息
+    print("🌐 正在启动服务器...")
+    
+    # 使用socketio.run()替代app.run()以支持WebSocket
+    socketio.run(app, host='127.0.0.1', port=5001, debug=True)

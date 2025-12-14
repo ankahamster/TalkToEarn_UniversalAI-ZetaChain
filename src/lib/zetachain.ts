@@ -4,17 +4,18 @@
  */
 
 import { ethers } from 'ethers'
-import { Intent, Chain } from '../../../../../zeta/Monallo-SimpleDemo/SimpleDemo/types/intent'
-import { switchToChain } from './chains'
+import { switchToChain, CHAIN_CONFIGS } from './chains'
 
 /**
  * 获取 ZetaChain Gateway 合约地址
- * 从环境变量读取（客户端使用 NEXT_PUBLIC_ 前缀）
+ * 从环境变量读取（客户端使用 VITE_ 前缀）
  */
 function getZetaChainGateway(): string {
-  // 客户端代码，使用 NEXT_PUBLIC_ 前缀的环境变量
+  // 客户端代码，使用 Vite 的 import.meta.env
   // Gateway 地址不是敏感信息，可以公开
-  return process.env.NEXT_PUBLIC_ZETACHAIN_GATEWAY || '0xF0a3F93Ed1B126142E61423F9546bf1323Ff82DF'
+  return typeof import.meta !== 'undefined' && import.meta.env?.VITE_ZETACHAIN_GATEWAY 
+    ? import.meta.env.VITE_ZETACHAIN_GATEWAY 
+    : '0xF0a3F93Ed1B126142E61423F9546bf1323Ff82DF'
 }
 
 /**
@@ -24,6 +25,26 @@ const GATEWAY_ABI = [
   'function sendZeta(uint256 destinationChainId, bytes calldata destinationAddress, uint256 destinationGasLimit) external payable',
   'function availableChainIds(uint256) external view returns (bool)',
 ]
+
+/**
+ * ERC20 合约 ABI（用于查询ZETA代币余额）
+ */
+const ERC20_ABI = [
+  'function balanceOf(address account) external view returns (uint256)',
+  'function symbol() external view returns (string)',
+  'function decimals() external view returns (uint8)',
+  'function name() external view returns (string)',
+]
+
+/**
+ * ZETA 代币合约地址（在 ZetaChain Testnet 上）
+ * 使用 ZetaChain Testnet 正确的 ZETA 代币合约地址
+ */
+
+// ZetaChain Testnet 正确的 ZETA 代币合约地址
+// 参考：https://docs.zetachain.com/docs/reference/contracts/ZEVM-contracts/#zeta-token-contract
+// 使用正确的校验和格式
+const ZETA_TOKEN_ADDRESS = '0xF0a3F93Ed1B126142E61423F9546bf1323Ff82DF'
 
 /**
  * BSC 链 ID
@@ -171,5 +192,56 @@ export async function zetaChainCrossChainTransfer(
   }
 
   return receipt?.hash || tx.hash
+}
+
+/**
+ * 查询当前钱包地址的ZETA余额
+ * 在ZetaChain上，ZETA是原生代币，直接使用getBalance查询
+ */
+export async function getZetaBalance(
+  provider: ethers.BrowserProvider,
+  signer: ethers.JsonRpcSigner
+): Promise<string> {
+  console.log('🔍 查询ZETA余额...')
+
+  try {
+    // 获取当前链信息
+    const network = await provider.getNetwork()
+    const currentChainId = network.chainId
+    console.log('当前网络:', { name: network.name, chainId: currentChainId })
+    
+    // 检查当前是否在ZetaChain上
+    const zetaChainIdHex = CHAIN_CONFIGS.zetachain.chainId
+    const zetaChainIdNumber = parseInt(zetaChainIdHex, 16)
+    console.log('ZetaChain配置:', {
+      chainIdHex: zetaChainIdHex,
+      chainIdNumber: zetaChainIdNumber
+    })
+     
+    
+    // 获取用户地址
+    const userAddress = await signer.getAddress()
+    console.log('当前钱包地址:', userAddress)
+
+    // 直接查询原生代币余额（ZetaChain上ZETA是原生代币）
+    console.log('📞 调用provider.getBalance()查询原生ZETA余额...')
+    const balance = await provider.getBalance(userAddress)
+    console.log('原始余额:', balance)
+    
+    // 格式化余额（ZETA使用18位小数）
+    const formattedBalance = ethers.formatEther(balance)
+    console.log(`💰 ZETA余额: ${formattedBalance} ZETA`)
+
+    return formattedBalance
+  } catch (error: any) {
+    console.error('❌ 查询ZETA余额失败:', error)
+    console.error('错误详情:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    })
+    // 如果查询失败，返回0
+    return '0'
+  }
 }
 
