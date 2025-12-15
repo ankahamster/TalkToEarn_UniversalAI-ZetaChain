@@ -1,5 +1,6 @@
 # 基础依赖
 flask
+flask-socketio
 langchain
 langchain-core
 langchain-text-splitters
@@ -9,6 +10,7 @@ chromadb
 numpy
 werkzeug
 chardet
+eventlet
 
 # 修复urllib3版本问题（当前环境使用LibreSSL 2.8.3，不支持urllib3 v2）
 urllib3<2.0
