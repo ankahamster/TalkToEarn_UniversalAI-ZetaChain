@@ -3,7 +3,7 @@
  * 仅支持 ZETA Transfer 和 ZetaChain 跨链到 BSC
  */
 
-import { Intent, Chain } from '../../../../../zeta/Monallo-SimpleDemo/SimpleDemo/types/intent'
+import { Intent, Chain } from '../typs/intent'
 import { ethers } from 'ethers'
 import { switchToChain } from './chains'
 import { zetaChainCrossChainTransfer } from './zetachain'

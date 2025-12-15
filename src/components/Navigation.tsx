@@ -6,10 +6,11 @@ import { switchToChain, CHAIN_CONFIGS } from "@/lib/chains";
 import { getZetaBalance } from "@/lib/zetachain";
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export const Navigation = () => {
   const location = useLocation();
-  const { provider, isConnected, account, connect } = useWeb3();
+  const { provider, isConnected, account, connect, disconnect } = useWeb3();
   const [copied, setCopied] = useState(false);
   const [zetaBalance, setZetaBalance] = useState<string>('0');
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
@@ -176,26 +177,35 @@ export const Navigation = () => {
                 </span>
               </div>
               
-              {/* 钱包地址显示 */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span className="text-sm font-medium text-green-900">已连接</span>
-                <Wallet className="w-4 h-4 text-gray-500" />
-                <span className="text-sm font-mono text-gray-700">
-                  {account.slice(0, 6)}...{account.slice(-4)}
-                </span>
-                <button
-                  onClick={handleCopyAddress}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                  title="复制地址"
-                >
-                  {copied ? (
+              {/* 钱包地址显示和登出下拉菜单 */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-gray-500" />
-                  )}
-                </button>
-              </div>
+                    <span className="text-sm font-medium text-green-900">已连接</span>
+                    <Wallet className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm font-mono text-gray-700">
+                      {account.slice(0, 6)}...{account.slice(-4)}
+                    </span>
+                    <button
+                      onClick={handleCopyAddress}
+                      className="p-1 hover:bg-gray-100 rounded transition-colors"
+                      title="复制地址"
+                    >
+                      {copied ? (
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-gray-500" />
+                      )}
+                    </button>
+                  </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={disconnect} className="text-red-600">
+                    断开并登出
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           ) : (
             <Button onClick={handleConnect} className="shadow-glow-primary">

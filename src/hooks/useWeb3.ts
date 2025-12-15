@@ -91,12 +91,30 @@ export function useWeb3() {
     }
   }
 
+  // 断开连接
+  const disconnect = async () => {
+    if (typeof window !== 'undefined' && window.ethereum) {
+      try {
+        // 尝试重置钱包连接状态
+        await window.ethereum.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
+      } catch (error) {
+        console.error('断开连接失败:', error)
+      }
+      // 重置状态
+      setIsConnected(false)
+      setAccount(null)
+      setCurrentChain(null)
+      setCurrentChainId(null)
+    }
+  }
+
   return {
     provider,
     isConnected,
     account,
     currentChain,
     currentChainId,
-    connect
+    connect,
+    disconnect
   }
 }

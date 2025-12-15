@@ -5,6 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Send, Sparkles, Image as ImageIcon } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import { useWeb3 } from '../hooks/useWeb3';
+import { executeIntent } from '../lib/blockchain';
+import IntentConfirmation from '../components/IntentConfirmation';
+import { Chain, Intent } from '../typs/intent';
+import { CHAIN_CONFIGS } from '../lib/chains';
 
 interface Message {
   role: "user" | "assistant";
@@ -19,6 +24,7 @@ interface SystemMessage {
 }
 
 const Chat = () => {
+  const { provider, isConnected, account } = useWeb3();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -27,6 +33,11 @@ const Chat = () => {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [pendingIntent, setPendingIntent] = useState<Intent | null>(null);
+  const [executionStatus, setExecutionStatus] = useState<'idle' | 'waiting-wallet' | 'success' | 'error'>('idle');
+  const [executionError, setExecutionError] = useState<string | undefined>();
+  const [currentChain, setCurrentChain] = useState<Chain | null>(null);
   
   // 系统消息状态管理
   const [systemMessages, setSystemMessages] = useState<SystemMessage[]>([]);
@@ -107,6 +118,78 @@ const Chat = () => {
   const handleImageGeneration = () => {
     toast.info("图像生成功能即将推出！");
   };
+
+  const handleConfirmIntent = async (intent: Intent) => {
+    if (!provider) {
+      addSystemMessage({
+        type: 'error',
+        content: '钱包未连接',
+      });
+      setPendingIntent(null);
+      return;
+    }
+
+    setPendingIntent(null);
+    setIsExecuting(true);
+    setExecutionStatus('idle');
+    setExecutionError(undefined);
+    
+    addSystemMessage({
+      type: 'info',
+      content: '已确认转账请求，正在执行...',
+    });
+    
+    try {
+      const signer = await provider.getSigner();
+      const txHash = await executeIntent(intent, provider, signer);
+      
+      setExecutionStatus('success');
+      
+      // 获取目标链浏览器链接
+      const targetChain = intent.toChain || intent.fromChain;
+      const explorerUrl = targetChain 
+        ? `${CHAIN_CONFIGS[targetChain].blockExplorerUrls[0]}/tx/${txHash}`
+        : `https://zetascan.com/tx/${txHash}`;
+      
+      const isCrossChain = intent.action === 'cross_chain_transfer';
+      const successContent = isCrossChain
+        ? `跨链转账成功！\n\n第一步（源链锁定）已完成。\n第二步（目标链铸造）将由 ZetaChain 验证器自动执行，通常需要几分钟。\n\n交易哈希: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`
+        : `转账成功！\n\n交易哈希: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`;
+      
+      addSystemMessage({
+        type: 'success',
+        content: successContent,
+      });
+      
+      // 3秒后关闭弹窗
+      setTimeout(() => {
+        setIsExecuting(false);
+        setPendingIntent(null);
+      }, 3000);
+    } catch (error: any) {
+      console.error('执行转账操作失败:', error);
+      setExecutionStatus('error');
+      setExecutionError(error.message);
+      
+      addSystemMessage({
+        type: 'error',
+        content: `转账失败: ${error.message || '未知错误'}`,
+      });
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  const handleCancelIntent = () => {
+    setPendingIntent(null);
+    setExecutionStatus('idle');
+    setExecutionError(undefined);
+    setIsExecuting(false);
+    addSystemMessage({
+      type: 'info',
+      content: '转账请求已取消',
+    });
+  };
   
   // 系统消息自动滚动
   useEffect(() => {
@@ -173,7 +256,39 @@ const Chat = () => {
       
       // 接收系统消息时
       socket.on('system_message', (data) => {
-        if (data.type && data.content) {
+        if (data.type === 'intent' && data.data) {
+          try {
+            // 解析意图数据
+            const intent: Intent = {
+              action: data.data.action,
+              fromChain: data.data.fromChain as Chain,
+              toChain: data.data.toChain as Chain,
+              fromToken: data.data.fromToken,
+              toToken: data.data.toToken,
+              amount: data.data.amount,
+              recipient: data.data.recipient,
+            };
+            
+            // 设置待处理的意图
+            setPendingIntent(intent);
+            setExecutionStatus('idle');
+            setExecutionError(undefined);
+            setIsExecuting(false);
+            
+            // 添加系统消息通知用户
+            addSystemMessage({
+              type: 'info',
+              content: `收到转账请求: ${data.data.action === 'transfer' ? '转账' : '跨链转账'} ${data.data.amount} ${data.data.fromToken}`,
+            });
+          } catch (error) {
+            console.error('解析转账意图失败:', error);
+            addSystemMessage({
+              type: 'error',
+              content: '解析转账请求失败',
+            });
+          }
+        } else if (data.type && data.content) {
+          // 处理普通系统消息
           addSystemMessage({
             type: data.type,
             content: data.content,
@@ -329,6 +444,23 @@ const Chat = () => {
           </div>
         </div>
       </main>
+      
+      {/* 意图确认弹窗 */}
+      {pendingIntent && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-card rounded-2xl p-6 max-w-2xl w-full mx-4 border border-border shadow-2xl">
+            <h3 className="text-xl font-semibold text-foreground mb-4">确认转账操作</h3>
+            <IntentConfirmation
+              intent={pendingIntent}
+              onConfirm={handleConfirmIntent}
+              onCancel={handleCancelIntent}
+              isExecuting={isExecuting}
+              executionStatus={executionStatus}
+              errorMessage={executionError}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

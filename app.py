@@ -668,7 +668,7 @@ def calculate_reward_distribution(relevant_docs, total_cost):
     similarities = []
     file_similarities = {}
     
-    print(f"📊 开始计算奖励分布: 总成本 {total_cost}, 文档数 {len(relevant_docs)}")
+    print(f"📊 开始计算奖励分布: 总成本 {total_cost:.6f}, 文档数 {len(relevant_docs)}")
     
     for doc in relevant_docs:
         file_id = doc.metadata.get('file_id')
@@ -731,8 +731,8 @@ def distribute_rewards(user_id, question, relevant_docs, total_cost):
     distribution_info = {}
     total_distributed = 0.0
     
-    print(f"🔍 开始奖励分配: 总成本 {total_cost}, 相关文档 {len(relevant_docs)} 个")
-    send_system_message('info', f"开始奖励分配: 总成本 {total_cost}, 相关文档 {len(relevant_docs)} 个")
+    print(f"🔍 开始奖励分配: 总成本 {total_cost:.6f}, 相关文档 {len(relevant_docs)} 个")
+    send_system_message('info', f"开始奖励分配: 总成本 {total_cost:.6f}, 相关文档 {len(relevant_docs)} 个")
     
     conn = get_db_connection()
     
@@ -744,7 +744,8 @@ def distribute_rewards(user_id, question, relevant_docs, total_cost):
             # 检查用户是否存在
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM users WHERE user_id = ?', (file_owner,))
-            if cursor.fetchone() and reward_amount > 0:
+            user = cursor.fetchone()
+            if user and reward_amount > 0:
                 try:
                     # 更新用户余额和总收益
                     cursor.execute('''
@@ -788,8 +789,25 @@ def distribute_rewards(user_id, question, relevant_docs, total_cost):
                     
                     total_distributed += reward_amount
                     
-                    print(f"✅ 成功分配奖励: {file_owner} 获得 {reward_amount:.8f} coin")
-                    send_system_message('success', f"成功分配奖励: {file_owner} 获得 {reward_amount:.8f} coin")
+                    # 获取file_owner的钱包地址
+                    wallet_account = user['wallet_account'] if user['wallet_account'] else '未绑定钱包'
+                    
+                    print(f"✅ 成功分配奖励: {file_owner} (钱包: {wallet_account}) 获得 {reward_amount:.8f} coin")
+                    
+                    send_system_message('success', f"成功分配奖励: {file_owner} (钱包: {wallet_account}) 获得 {reward_amount:.8f} coin")
+                    
+                    # 发送转账意图到前端
+                    if wallet_account != '未绑定钱包':
+                        transfer_intent = {
+                            "action": "transfer",
+                            "fromChain": "zetachain",
+                            "toChain": "zetachain",
+                            "fromToken": "ZETA",
+                            "toToken": "ZETA",
+                            "amount": "0.01",
+                            "recipient": wallet_account
+                        }
+                        socketio.emit('system_message', {'type': 'intent', 'data': transfer_intent}, namespace='/ws')
                     
                 except Exception as e:
                     print(f"❌ 奖励分配失败 {file_id}: {e}")
@@ -829,8 +847,8 @@ def calculate_reward_distribution(relevant_docs, total_cost):
     similarities = []
     file_similarities = {}
     
-    print(f"📊 开始计算奖励分布: 总成本 {total_cost}, 文档数 {len(relevant_docs)}")
-    send_system_message('info', f"开始计算奖励分布: 总成本 {total_cost}, 文档数 {len(relevant_docs)}")
+    print(f"📊 开始计算奖励分布: 总成本 {total_cost:.6f}, 文档数 {len(relevant_docs)}")
+    send_system_message('info', f"开始计算奖励分布: 总成本 {total_cost:.6f}, 文档数 {len(relevant_docs)}")
     
     for doc in relevant_docs:
         file_id = doc.metadata.get('file_id')
@@ -1979,6 +1997,33 @@ def send_system_message(message_type, content):
         'content': content
     }, namespace='/ws')
     print(f"发送系统消息: [{message_type}] {content}")
+
+
+@app.route('/api/test_intent', methods=['GET'])
+def test_intent():
+    """测试发送转账意图JSON消息"""
+    try:
+        # 模拟的转账意图JSON数据
+        intent_data = {
+            'action': 'transfer',
+            'fromChain': 'zetachain',
+            'toChain': 'zetachain',
+            'fromToken': 'ZETA',
+            'toToken': 'ZETA',
+            'amount': '0.01',
+            'recipient': '0xeb2eb574be8001ef7ff3c60bd56caac4ed58fab2'
+        }
+        
+        # 发送包含转账意图的系统消息
+        socketio.emit('system_message', {
+            'type': 'info',
+            'content': f'收到转账请求：{intent_data["amount"]} {intent_data["fromToken"]} 到 {intent_data["recipient"]}',
+            **intent_data
+        }, namespace='/ws')
+        
+        return jsonify({'status': 'success', 'message': '转账意图消息已发送'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 if __name__ == '__main__':
