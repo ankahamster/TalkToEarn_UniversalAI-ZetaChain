@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.2;
+pragma solidity ^0.8.26;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IERC721 {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
-    
     function balanceOf(address owner) external view returns (uint256);
     function ownerOf(uint256 tokenId) external view returns (address);
 }
 
-contract SimpleMintOnlyNFT is IERC721 {
+contract SimpleMintOnlyNFT is IERC721, Ownable {
     string public name;
     string public symbol;
 
     uint256 private _tokenIdCounter = 1;
-
     mapping(uint256 => address) private _owners;
     mapping(address => uint256) private _balances;
     mapping(uint256 => string) private _tokenURIs;
 
-    constructor(string memory name_, string memory symbol_) {
+    constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
         name = name_;
         symbol = symbol_;
     }
@@ -34,10 +34,8 @@ contract SimpleMintOnlyNFT is IERC721 {
         return owner;
     }
 
-    // 公开的铸造函数，任何人均可调用（可根据需求改为 onlyOwner）
-    function mint(address to, string memory uri) public {
+    function mint(address to, string memory uri) public onlyOwner {
         require(to != address(0), "Mint to zero address");
-
         uint256 tokenId = _tokenIdCounter;
         _tokenIdCounter++;
 
@@ -52,6 +50,4 @@ contract SimpleMintOnlyNFT is IERC721 {
         require(_owners[tokenId] != address(0), "Token doesn't exist");
         return _tokenURIs[tokenId];
     }
-
-
 }
