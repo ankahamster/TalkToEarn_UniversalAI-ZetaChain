@@ -25,12 +25,27 @@ interface SystemMessage {
 
 const Chat = () => {
   const { provider, isConnected, account } = useWeb3();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: "您好！我是 AI 助手，可以帮您生成文本或图像。有什么我可以帮助您的吗？",
-    },
-  ]);
+  
+  // 从localStorage加载聊天记录
+  const loadMessagesFromStorage = (): Message[] => {
+    try {
+      const storedMessages = localStorage.getItem('chat_messages');
+      if (storedMessages) {
+        return JSON.parse(storedMessages);
+      }
+    } catch (error) {
+      console.error('加载聊天记录失败:', error);
+    }
+    // 默认消息
+    return [
+      {
+        role: "assistant",
+        content: "您好！我是 AI 助手，可以帮您生成文本或图像。有什么我可以帮助您的吗？",
+      },
+    ];
+  };
+  
+  const [messages, setMessages] = useState<Message[]>(loadMessagesFromStorage());
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -43,6 +58,9 @@ const Chat = () => {
   const [systemMessages, setSystemMessages] = useState<SystemMessage[]>([]);
   const systemMessagesEndRef = useRef<HTMLDivElement>(null);
   
+  // 聊天消息滚动管理
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
   // 添加系统消息的函数
   const addSystemMessage = (message: Omit<SystemMessage, 'id' | 'timestamp'>): SystemMessage => {
     const newSystemMessage: SystemMessage = {
@@ -53,12 +71,25 @@ const Chat = () => {
     setSystemMessages((prev) => [...prev, newSystemMessage]);
     return newSystemMessage;
   };
+  
+  // 保存聊天记录到localStorage
+  const saveMessagesToStorage = (messages: Message[]) => {
+    try {
+      localStorage.setItem('chat_messages', JSON.stringify(messages));
+    } catch (error) {
+      console.error('保存聊天记录失败:', error);
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim()) return;
 
     const userMessage: Message = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => {
+      const newMessages = [...prev, userMessage];
+      saveMessagesToStorage(newMessages);
+      return newMessages;
+    });
     setInput("");
     setIsLoading(true);
 
@@ -87,6 +118,7 @@ const Chat = () => {
           setMessages((prev) => {
             const newMessages = [...prev, aiMessage];
             aiMessageIndex = newMessages.length - 1;
+            saveMessagesToStorage(newMessages);
             return newMessages;
           });
         } else {
@@ -97,6 +129,7 @@ const Chat = () => {
               ...newMessages[aiMessageIndex], 
               content: responseContent 
             };
+            saveMessagesToStorage(newMessages);
             return newMessages;
           });
         }
@@ -195,6 +228,11 @@ const Chat = () => {
   useEffect(() => {
     systemMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [systemMessages.length]);
+  
+  // 聊天消息自动滚动
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length, isLoading]);
   
   // Socket.IO连接状态管理
   const [socket, setSocket] = useState<any>(null);
@@ -394,6 +432,9 @@ const Chat = () => {
                     </div>
                   </div>
                 )}
+                
+                {/* 用于自动滚动的元素 */}
+                <div ref={messagesEndRef} />
               </div>
 
               <div className="border-t border-border/50 p-4">

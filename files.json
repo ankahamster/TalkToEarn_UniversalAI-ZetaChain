@@ -30,8 +30,8 @@
     "content_preview": "编程语言是人类用以指挥计算机的精密工具。它构建了一套兼具逻辑性与可读性的语法体系，充当着人类思维与机器二进制世界之间的翻译桥梁。\r\n\r\n与我们日常灵活的语言不同，编程语言的核心在于精确无歧义。通过特定关键词和逻辑结构，我们将复杂问题拆解为一系列可供计算机逐步执行的明确指令。这个过程本质上是将人类的抽象思考——无论是数学计算、数据处理还是智能算法——转化为机器能够理解和运行的精确代码。\r\n\r\n从低级...",
     "upload_time": "2025-11-27T11:09:11.950834",
     "authorize_rag": true,
-    "reference_count": 1,
-    "total_reward": 1e-06,
+    "reference_count": 4,
+    "total_reward": 4e-06,
     "file_path": "SHARED_CONTENT\\20251127110911_test1.txt",
     "ipfs_url": "https://gateway.pinata.cloud/ipfs/QmXbdRamTwAaVMML55tzAibUgMZbjaUfMQvqtx9UNc5kSq"
   },

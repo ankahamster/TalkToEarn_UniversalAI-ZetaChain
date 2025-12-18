@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => ({
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api/, ""),
             },
+            "/ask": {
+                target: "http://localhost:5001",
+                changeOrigin: true,
+            },
             "/socket.io": {
                 target: "http://localhost:5001",
                 changeOrigin: true,
