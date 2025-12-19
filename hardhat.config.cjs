@@ -17,7 +17,8 @@ module.exports = {
   },
   networks: {
     zeta_testnet: {
-      url: "https://zetachain-athens-evm.blockpi.network/v1/rpc/public",
+      // 默认使用 BlockPI 节点；如需切换可再设置 ZETA_RPC_URL 覆盖
+      url: process.env.ZETA_RPC_URL || "https://zetachain-athens-evm.blockpi.network/v1/rpc/public",
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
       chainId: 7001,
     },

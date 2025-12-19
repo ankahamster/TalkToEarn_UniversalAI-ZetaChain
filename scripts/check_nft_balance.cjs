@@ -4,7 +4,7 @@ const hre = require("hardhat");
 async function main() {
   // ================= 配置区 =================
   // 你的 NFT 合约地址 (之前部署的)
-  const NFT_ADDRESS = "0xD57e7144BEa29900A201BB88DC1D88F37D3Ad649";
+  const NFT_ADDRESS = "0x7abbD946795CEf5Afc33DEb4f1b4DD59F534f7Ec";
   
   // 你的钱包地址
   const USER_ADDRESS = "0xf33d6e8180D7A86EBe60DaeB5b6AAe96aB0f3483";

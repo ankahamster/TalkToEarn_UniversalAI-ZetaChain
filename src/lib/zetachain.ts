@@ -15,10 +15,10 @@ import { Intent } from '../types/intent' // 确保路径根据你的项目结构
 // ==========================================
 
 // 你的 TalkToEarnManager 合约地址 (新)
-export const MANAGER_CONTRACT_ADDRESS = '0x3afE5090B190A7742AeCc8A418EEcc6387d0B5df'
+export const MANAGER_CONTRACT_ADDRESS = '0xD7BF0f6Ec8Cb9b8f334cfe012D1021d54Dc273b4'
 
 // 你的 NFT 合约地址 (新)
-export const NFT_CONTRACT_ADDRESS = '0xD57e7144BEa29900A201BB88DC1D88F37D3Ad649'
+export const NFT_CONTRACT_ADDRESS = '0x7abbD946795CEf5Afc33DEb4f1b4DD59F534f7Ec'
 
 // ZetaChain Athens (7001) 的 ZETA Token 合约（用于跨链 sendZeta 之前的 wrap + approve）
 const ZETA_TOKEN_ADDRESS =

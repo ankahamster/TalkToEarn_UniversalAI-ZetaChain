@@ -5,7 +5,7 @@ const protocolContracts = require("@zetachain/protocol-contracts");
 async function main() {
   // ================= 配置区 =================
   // 你的 TalkToEarnManager 地址 (请确认没填错)
-  const TARGET_MANAGER_ADDRESS = "0x3afE5090B190A7742AeCc8A418EEcc6387d0B5df"; 
+  const TARGET_MANAGER_ADDRESS = "0xD7BF0f6Ec8Cb9b8f334cfe012D1021d54Dc273b4"; 
  
   // ===========================================
 

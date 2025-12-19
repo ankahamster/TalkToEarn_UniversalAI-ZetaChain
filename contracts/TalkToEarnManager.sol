@@ -15,6 +15,22 @@ contract TalkToEarnManager is UniversalContract, Ownable {
     event CrossChainReceived(address indexed sender, uint256 amount, string message);
     event RewardsDistributed(address indexed recipient, uint256 amount);
     event CrossChainReverted(address indexed sender, address indexed asset, uint256 amount, bytes revertMessage);
+    event Staked(bytes32 indexed contentId, address indexed user, address indexed zrc20, uint256 amount);
+    event Unstaked(bytes32 indexed contentId, address indexed user, address indexed zrc20, uint256 amount);
+    event RewardAdded(bytes32 indexed contentId, address indexed zrc20, uint256 amount);
+    event RewardClaimed(bytes32 indexed contentId, address indexed user, address indexed zrc20, uint256 amount);
+
+    struct StakeInfo {
+        uint256 amount;
+        uint256 rewardDebt; // accRewardPerShare1e18 * amount
+    }
+
+    // contentId => zrc20 => accRewardPerShare(1e18)
+    mapping(bytes32 => mapping(address => uint256)) public accRewardPerShare1e18;
+    // contentId => zrc20 => total staked
+    mapping(bytes32 => mapping(address => uint256)) public totalStaked;
+    // contentId => zrc20 => user => stake info
+    mapping(bytes32 => mapping(address => mapping(address => StakeInfo))) public stakes;
 
     /**
      * @dev 构造函数
@@ -104,6 +120,94 @@ contract TalkToEarnManager is UniversalContract, Ownable {
 
     // 支持 GatewayZEVM 的 ZETA (native) depositAndCall：目标合约需要能接收 value
     receive() external payable {}
+
+    // --------------------------- Staking & Rewards ---------------------------
+
+    /**
+     * @notice 质押 ZRC20 到某个 contentId（比如 files.json 的 key 或内容哈希）
+     * @param contentId 内容标识（建议使用 keccak256(bytes(key))）
+     * @param zrc20 ZRC20 代币地址
+     * @param amount 质押数量
+     */
+    function stake(bytes32 contentId, address zrc20, uint256 amount) external {
+        require(amount > 0, "amount=0");
+
+        StakeInfo storage s = stakes[contentId][zrc20][msg.sender];
+        _harvest(contentId, zrc20, msg.sender, s);
+
+        totalStaked[contentId][zrc20] += amount;
+        s.amount += amount;
+        s.rewardDebt = (s.amount * accRewardPerShare1e18[contentId][zrc20]) / 1e18;
+
+        bool ok = IZRC20(zrc20).transferFrom(msg.sender, address(this), amount);
+        require(ok, "stake transfer failed");
+        emit Staked(contentId, msg.sender, zrc20, amount);
+    }
+
+    /**
+     * @notice 解押
+     */
+    function unstake(bytes32 contentId, address zrc20, uint256 amount) external {
+        StakeInfo storage s = stakes[contentId][zrc20][msg.sender];
+        require(amount > 0 && amount <= s.amount, "invalid amount");
+
+        _harvest(contentId, zrc20, msg.sender, s);
+
+        s.amount -= amount;
+        totalStaked[contentId][zrc20] -= amount;
+        s.rewardDebt = (s.amount * accRewardPerShare1e18[contentId][zrc20]) / 1e18;
+
+        bool ok = IZRC20(zrc20).transfer(msg.sender, amount);
+        require(ok, "unstake transfer failed");
+        emit Unstaked(contentId, msg.sender, zrc20, amount);
+    }
+
+    /**
+     * @notice 仅 owner 可调用：把 rewardAmount 按质押占比分配给 contentId 的质押者
+     * @dev 奖励资金从合约余额扣除，若余额不足则按余额上限发放
+     */
+    function rewardOnUse(bytes32 contentId, address zrc20, uint256 rewardAmount) external onlyOwner {
+        uint256 total = totalStaked[contentId][zrc20];
+        require(total > 0, "no stakes");
+        require(rewardAmount > 0, "amount=0");
+
+        uint256 balance = IZRC20(zrc20).balanceOf(address(this));
+        uint256 amount = rewardAmount > balance ? balance : rewardAmount;
+        require(amount > 0, "insufficient balance");
+
+        // acc += amount / total
+        accRewardPerShare1e18[contentId][zrc20] += (amount * 1e18) / total;
+        emit RewardAdded(contentId, zrc20, amount);
+    }
+
+    /**
+     * @notice 领取某 contentId 的待领取奖励
+     */
+    function claim(bytes32 contentId, address zrc20) external {
+        StakeInfo storage s = stakes[contentId][zrc20][msg.sender];
+        _harvest(contentId, zrc20, msg.sender, s);
+        s.rewardDebt = (s.amount * accRewardPerShare1e18[contentId][zrc20]) / 1e18;
+    }
+
+    /**
+     * @notice 查询待领取奖励
+     */
+    function pendingRewards(bytes32 contentId, address zrc20, address user) external view returns (uint256) {
+        StakeInfo storage s = stakes[contentId][zrc20][user];
+        uint256 acc = accRewardPerShare1e18[contentId][zrc20];
+        return (s.amount * acc) / 1e18 - s.rewardDebt;
+    }
+
+    function _harvest(bytes32 contentId, address zrc20, address user, StakeInfo storage s) private {
+        if (s.amount == 0) return;
+        uint256 acc = accRewardPerShare1e18[contentId][zrc20];
+        uint256 pending = (s.amount * acc) / 1e18 - s.rewardDebt;
+        if (pending > 0) {
+            bool ok = IZRC20(zrc20).transfer(user, pending);
+            require(ok, "reward transfer failed");
+            emit RewardClaimed(contentId, user, zrc20, pending);
+        }
+    }
 
     function _decodeTokenURI(bytes calldata message) private view returns (string memory, bool) {
         // 使用 staticcall 捕获 abi.decode 失败，不让整个 onCall revert
