@@ -95,7 +95,9 @@ const Chat = () => {
 
     try {
       // 使用 Server-Sent Events (SSE) 连接后端 API
-      const eventSource = new EventSource(`/api/ask?q=${encodeURIComponent(input)}`);
+      // const eventSource = new EventSource(`/api/ask?q=${encodeURIComponent(input)}`);
+      const eventSource = new EventSource(`/api/ask?q=${encodeURIComponent(input)}&wallet_address=${account}`);
+
       let responseContent = "";
       let aiMessageIndex: number | null = null;
 
