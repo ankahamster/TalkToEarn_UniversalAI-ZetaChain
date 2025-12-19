@@ -1,0 +1,36 @@
+{
+  "name": "TalkToEarn Badge - exercise",
+  "description": "锻炼能强健体魄、提升心情。它增强心肺功能，帮助控制体重，降低慢性病风险；同时释放内啡肽，缓解压力焦虑，改善睡眠质量。规律运动还能提升精力与专注力，并促进社交互动。长期坚持，身心皆受益。",
+  "external_url": "https://gateway.pinata.cloud/ipfs/QmbLLNiBRHymHapeRqUHY2jy6PHvhxVW47kBme2RZTYKyH",
+  "animation_url": "ipfs://QmbLLNiBRHymHapeRqUHY2jy6PHvhxVW47kBme2RZTYKyH",
+  "attributes": [
+    {
+      "trait_type": "key",
+      "value": "20251217205802_test0"
+    },
+    {
+      "trait_type": "filename",
+      "value": "exercise"
+    },
+    {
+      "trait_type": "user_id",
+      "value": "test0"
+    },
+    {
+      "trait_type": "upload_time",
+      "value": "2025-12-17T20:58:08.493371"
+    },
+    {
+      "trait_type": "reference_count",
+      "value": 0
+    },
+    {
+      "trait_type": "total_reward",
+      "value": "0.0"
+    },
+    {
+      "trait_type": "authorize_rag",
+      "value": true
+    }
+  ]
+}

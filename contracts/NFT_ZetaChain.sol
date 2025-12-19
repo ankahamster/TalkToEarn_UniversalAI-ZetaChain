@@ -2,52 +2,29 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
-interface IERC721 {
-    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
-    function balanceOf(address owner) external view returns (uint256);
-    function ownerOf(uint256 tokenId) external view returns (address);
-}
+/**
+ * @dev 简化版 ERC721：仅支持 owner 铸造、URI 存储，其他操作走标准 ERC721 接口。
+ * 兼容原有接口：mint(address to, string uri)，保留 onlyOwner 约束。
+ */
+contract SimpleMintOnlyNFT is ERC721URIStorage, Ownable {
+    uint256 private _nextTokenId = 1;
 
-contract SimpleMintOnlyNFT is IERC721, Ownable {
-    string public name;
-    string public symbol;
+    constructor(string memory name_, string memory symbol_) ERC721(name_, symbol_) Ownable(msg.sender) {}
 
-    uint256 private _tokenIdCounter = 1;
-    mapping(uint256 => address) private _owners;
-    mapping(address => uint256) private _balances;
-    mapping(uint256 => string) private _tokenURIs;
-
-    constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
-        name = name_;
-        symbol = symbol_;
-    }
-
-    function balanceOf(address owner) public view override returns (uint256) {
-        require(owner != address(0), "Zero address");
-        return _balances[owner];
-    }
-
-    function ownerOf(uint256 tokenId) public view override returns (address) {
-        address owner = _owners[tokenId];
-        require(owner != address(0), "Token doesn't exist");
-        return owner;
-    }
-
+    /**
+     * @dev 仅 owner 可铸造；tokenId 从 1 开始自增。
+     */
     function mint(address to, string memory uri) public onlyOwner {
         require(to != address(0), "Mint to zero address");
-        uint256 tokenId = _tokenIdCounter;
-        _tokenIdCounter++;
 
-        _owners[tokenId] = to;
-        _balances[to] += 1;
-        _tokenURIs[tokenId] = uri;
+        // tokenId 起始为 1
+        uint256 tokenId = _nextTokenId++;
 
-        emit Transfer(address(0), to, tokenId);
+        _safeMint(to, tokenId);
+        _setTokenURI(tokenId, uri);
     }
 
-    function tokenURI(uint256 tokenId) public view returns (string memory) {
-        require(_owners[tokenId] != address(0), "Token doesn't exist");
-        return _tokenURIs[tokenId];
-    }
+    // ERC721URIStorage 已提供 tokenURI；本合约不需要额外 override/burn。
 }

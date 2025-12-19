@@ -1,0 +1,36 @@
+{
+  "name": "TalkToEarn Badge - love0",
+  "description": "爱是一个无法被单一定义包容的词汇，它更像一场多棱的光，在不同关系中折射出不同的色彩。 在亲密关系里，爱是主动选择的牵绊——它始于悸动，却延续于日复一日的选择。当最初的光晕褪去，我们仍愿意理解彼此的孤独，在对方的局限里看见真实，并依然选择靠近。这种爱不是占有，而是两个完整灵魂的相互映照。 推及更广，爱是一种向世界舒展的能力。是对清晨路边野花的留心，是对陌生人痛苦的共情，是明知世界不完美仍...",
+  "external_url": "https://gateway.pinata.cloud/ipfs/QmesMDRubQwh4oGM4ieyaRHytpeZNR3zeX3HHfTqrTSpoA",
+  "animation_url": "ipfs://QmesMDRubQwh4oGM4ieyaRHytpeZNR3zeX3HHfTqrTSpoA",
+  "attributes": [
+    {
+      "trait_type": "key",
+      "value": "20251127004057_test0"
+    },
+    {
+      "trait_type": "filename",
+      "value": "love0"
+    },
+    {
+      "trait_type": "user_id",
+      "value": "test0"
+    },
+    {
+      "trait_type": "upload_time",
+      "value": "2025-11-27T00:40:57.524386"
+    },
+    {
+      "trait_type": "reference_count",
+      "value": 30
+    },
+    {
+      "trait_type": "total_reward",
+      "value": "3.000000000000001e-05"
+    },
+    {
+      "trait_type": "authorize_rag",
+      "value": true
+    }
+  ]
+}

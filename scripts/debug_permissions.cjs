@@ -3,8 +3,8 @@ const hre = require("hardhat");
 
 async function main() {
   // ================= 配置区 (请确保是最新部署的地址) =================
-  const NFT_ADDR = "0xB7277D1C77B6239910f0F67ad72A23cB13a6Df66";
-  const MANAGER_ADDR = "0x6a5B86085CE2818Ae41aC0A089C83fd100a7bCB8";
+  const NFT_ADDR = "0xD57e7144BEa29900A201BB88DC1D88F37D3Ad649";
+  const MANAGER_ADDR = "0x3afE5090B190A7742AeCc8A418EEcc6387d0B5df";
   // ==============================================================
 
   const [signer] = await hre.ethers.getSigners();

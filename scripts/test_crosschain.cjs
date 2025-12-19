@@ -5,8 +5,8 @@ const protocolContracts = require("@zetachain/protocol-contracts");
 async function main() {
   // ================= 配置区 =================
   // 你的 TalkToEarnManager 地址 (请确认没填错)
-  const TARGET_MANAGER_ADDRESS = "0x6a5B86085CE2818Ae41aC0A089C83fd100a7bCB8"; 
-  
+  const TARGET_MANAGER_ADDRESS = "0x3afE5090B190A7742AeCc8A418EEcc6387d0B5df"; 
+ 
   // ===========================================
 
   const [signer] = await hre.ethers.getSigners();
@@ -31,6 +31,11 @@ async function main() {
   console.log("🌐 当前网络 chainId:", chainId);
   console.log("🏛️  使用 GatewayEVM:", gatewayAddress);
 
+  // 你想铸造的 tokenURI（metadata CID），可以通过环境变量 TOKEN_URI 覆盖
+  const tokenURI =
+    process.env.TOKEN_URI?.trim() ||
+    "ipfs://QmRNQYgKE9Azx5F64C889uMYubLrncLgZo8HDnbaetPyop"; // exercise 示例
+
   // Gateway ABI
   const gatewayAbi = [
     "function call(address receiver, bytes calldata payload, tuple(address revertAddress, bool callOnRevert, address abortAddress, bytes revertMessage, uint256 onRevertGasLimit) revertOptions) external payable" 
@@ -39,8 +44,8 @@ async function main() {
 
   const gateway = new hre.ethers.Contract(gatewayAddress, gatewayAbi, signer);
 
-  // 可选：如果你希望“跨链消息影响 tokenURI”，这里可以直接传 ipfs:// 开头的字符串
-  const payload = hre.ethers.toUtf8Bytes("ipfs://talktoearn_test");
+  // 推荐：payload 使用 ABI 编码，manager 端会 abi.decode(bytes,(string)) 得到 tokenURI
+  const payload = hre.ethers.AbiCoder.defaultAbiCoder().encode(["string"], [tokenURI]);
   const revertOptions = {
     revertAddress: "0x0000000000000000000000000000000000000000",
     callOnRevert: false,
@@ -50,6 +55,7 @@ async function main() {
   };
 
   console.log("📡 正在调用 Gateway 发送信号...");
+  console.log("🎯 tokenURI:", tokenURI);
 
   // 注意：GatewayEVM 的第一笔跨链动作通常 fee=0，传入任何 msg.value 都可能触发 ExcessETHProvided 而回滚。
   const tx = await gateway.call(TARGET_MANAGER_ADDRESS, payload, revertOptions);

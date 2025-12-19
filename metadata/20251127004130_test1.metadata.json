@@ -1,0 +1,36 @@
+{
+  "name": "TalkToEarn Badge - law0",
+  "description": "法律是一个社会赖以存续的基石，它是由国家制定或认可，并以强制力保障实施的行为规范体系。 其核心如同一个社会的“骨架”与“游戏规则”。首先，法律是秩序的基石，它通过明确的权利与义务，划定每个个体和组织的行动边界，从而解决纠纷、维持社会的基本稳定与可预期性。没有法律，社会将陷入弱肉强食的混乱。 其次，法律是公正的准绳。它确立了评判是非曲直的统一标准，要求“法律面前人人平等”，旨在保障公民的...",
+  "external_url": "https://gateway.pinata.cloud/ipfs/QmZsjoMSUhRX4q1moefHCzhh46VH4CqZTbvedmQ4LLdMfY",
+  "animation_url": "ipfs://QmZsjoMSUhRX4q1moefHCzhh46VH4CqZTbvedmQ4LLdMfY",
+  "attributes": [
+    {
+      "trait_type": "key",
+      "value": "20251127004130_test1"
+    },
+    {
+      "trait_type": "filename",
+      "value": "law0"
+    },
+    {
+      "trait_type": "user_id",
+      "value": "test1"
+    },
+    {
+      "trait_type": "upload_time",
+      "value": "2025-11-27T00:41:30.547073"
+    },
+    {
+      "trait_type": "reference_count",
+      "value": 0
+    },
+    {
+      "trait_type": "total_reward",
+      "value": "0.0"
+    },
+    {
+      "trait_type": "authorize_rag",
+      "value": true
+    }
+  ]
+}

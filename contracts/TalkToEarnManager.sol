@@ -22,7 +22,7 @@ contract TalkToEarnManager is UniversalContract, Ownable {
      * 2. 移除了父类构造函数调用：UniversalContract 没有构造函数参数。
      */
     constructor(address _nftContract) Ownable(msg.sender) {
-        nftContract = INFTContract(_nftContract);
+        nftContract = INFTContract(_nftContract);//这里没有校验 _nftContract != address(0)，部署时要保证地址正确
     }
 
     /**
@@ -47,12 +47,19 @@ contract TalkToEarnManager is UniversalContract, Ownable {
             return;
         }
 
-        // 默认 tokenURI；如果 message 看起来是 ipfs:// 开头，则使用 message 作为 tokenURI（兼容直接传 UTF-8 bytes）
+        // 默认 tokenURI；优先尝试 ABI 解码 message 为 string（推荐使用 abi.encode(string tokenURI) 作为 payload）
+        // 解码失败时再尝试把 message 当作 UTF-8 字符串，并且要求前缀 ipfs:// 才使用
         string memory tokenURI = "ipfs://default_v7";
         if (message.length > 0) {
-            string memory candidate = string(message);
-            if (_startsWith(candidate, "ipfs://")) {
-                tokenURI = candidate;
+            (string memory decoded, bool ok) = _decodeTokenURI(message);
+            if (ok && _startsWith(decoded, "ipfs://")) {
+                tokenURI = decoded;
+            } else {
+                // 兼容旧的 UTF-8 直接传法
+                string memory candidate = string(message);
+                if (_startsWith(candidate, "ipfs://")) {
+                    tokenURI = candidate;
+                }
             }
         }
 
@@ -98,6 +105,17 @@ contract TalkToEarnManager is UniversalContract, Ownable {
     // 支持 GatewayZEVM 的 ZETA (native) depositAndCall：目标合约需要能接收 value
     receive() external payable {}
 
+    function _decodeTokenURI(bytes calldata message) private view returns (string memory, bool) {
+        // 使用 staticcall 捕获 abi.decode 失败，不让整个 onCall revert
+        (bool success, bytes memory ret) = address(this).staticcall(
+            abi.encodeWithSelector(this.__decodeString.selector, message)
+        );
+        if (!success || ret.length == 0) {
+            return ("", false);
+        }
+        return (abi.decode(ret, (string)), true);
+    }
+
     function _startsWith(string memory str, string memory prefix) private pure returns (bool) {
         bytes memory s = bytes(str);
         bytes memory p = bytes(prefix);
@@ -106,5 +124,10 @@ contract TalkToEarnManager is UniversalContract, Ownable {
             if (s[i] != p[i]) return false;
         }
         return true;
+    }
+
+    // 供 _decodeTokenURI 通过 staticcall 捕获解码错误
+    function __decodeString(bytes calldata data) external pure returns (string memory) {
+        return abi.decode(data, (string));
     }
 }
