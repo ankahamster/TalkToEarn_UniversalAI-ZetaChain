@@ -1,0 +1,70 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+
+
+# 环境变量（包含敏感数据）
+.env
+.env.local
+.env*.local
+
+# 依赖
+node_modules/
+.pnp
+.pnp.js
+
+# Hardhat / Solidity build artifacts
+artifacts/
+cache/
+typechain-types/
+
+# 构建输出
+.next/
+out/
+build/
+dist/
+
+# 日志
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+.env

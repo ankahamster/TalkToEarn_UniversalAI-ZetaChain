@@ -1,0 +1,68 @@
+{
+  "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d": {
+    "password_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "coin_balance": 1.0,
+    "total_earned": 0.0,
+    "total_spent": 0.0,
+    "registration_time": "2025-12-20T02:41:19.792074",
+    "uploaded_files": [
+      "20251220024142_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+      "20251220024212_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d"
+    ],
+    "referenced_files": [
+      {
+        "file_id": "20251220024142_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+        "question": "什么是爱",
+        "reward": 1e-06,
+        "timestamp": "2025-12-20T10:14:49.945654",
+        "similarity": 0.7599927204689638,
+        "weight": 1.0
+      },
+      {
+        "file_id": "20251220024142_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+        "question": "爱是什么",
+        "reward": 1e-06,
+        "timestamp": "2025-12-20T13:46:47.280986",
+        "similarity": 0.6398679274269835,
+        "weight": 1.0
+      },
+      {
+        "file_id": "20251220024212_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+        "question": "什么是睡眠",
+        "reward": 2.8441151709432187e-07,
+        "timestamp": "2025-12-20T13:50:40.638101",
+        "similarity": 0.27075135564288033,
+        "weight": 0.2844115170943219
+      }
+    ]
+  },
+  "0x6d94e87fa68cc9b474d3e29141bb11930b5056b1": {
+    "password_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "coin_balance": 1.0,
+    "total_earned": 0.0,
+    "total_spent": 0.0,
+    "registration_time": "2025-12-20T02:49:11.887487",
+    "uploaded_files": [
+      "20251220134820_0x6d94e87fa68cc9b474d3e29141bb11930b5056b1"
+    ],
+    "referenced_files": [
+      {
+        "file_id": "20251220134820_0x6d94e87fa68cc9b474d3e29141bb11930b5056b1",
+        "question": "什么是睡眠",
+        "reward": 7.15588482905678e-07,
+        "timestamp": "2025-12-20T13:50:40.610347",
+        "similarity": 0.6812190793416097,
+        "weight": 0.7155884829056781
+      }
+    ]
+  },
+  "0x39888ce8e6e9919cb0bab3ff51c9cb101c3fdb98": {
+    "password_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "coin_balance": 1.0,
+    "total_earned": 0.0,
+    "total_spent": 0.0,
+    "registration_time": "2025-12-20T13:45:38.984831",
+    "uploaded_files": [],
+    "referenced_files": []
+  }
+}
