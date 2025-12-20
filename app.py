@@ -401,6 +401,36 @@ def get_user_stats(user_id):
         'uploaded_files_count': uploaded_files_count
     }
 
+def get_user_status(user_id):
+    users = load_users()
+    if user_id not in users:
+        return None
+    
+    user = users[user_id]
+    transactions = load_transactions()
+    today = datetime.now().date()
+    
+    today_earned = 0.0
+    today_references = 0
+    
+    for tx in transactions:
+        tx_time = datetime.fromisoformat(tx['timestamp']).date()
+        if tx_time == today:
+            if tx['type'] == 'reward' and tx['to_user'] == user_id:
+                today_earned += tx['amount']
+            elif tx['type'] == 'reference' and tx['file_owner'] == user_id:
+                today_references += 1
+    
+    return {
+        'coin_balance': user['coin_balance'],
+        'total_earned': user['total_earned'],
+        'total_spent': user['total_spent'],
+        'today_earned': today_earned,
+        'today_references': today_references,
+        'uploaded_files_count': len(user['uploaded_files'])
+    }
+
+
 @app.route('/connect_wallet', methods=['POST','OPTIONS'])
 def connect_wallet():
     """处理钱包连接请求"""
@@ -414,6 +444,27 @@ def connect_wallet():
     if not wallet_address:
         return jsonify({'success': False, 'message': '钱包地址不能为空'})
     
+
+    #检查用户是否在列表
+    users = load_users()
+    user_id = wallet_address
+    password = '123456'
+    
+    if user_id in users:
+        print("钱包用户已在列表")
+    else:
+        print("新用户创建")
+        users[user_id] = {
+        'password_hash': hash_password(password),
+        'coin_balance': 1.0,
+        'total_earned': 0.0,  #初始化为0
+        'total_spent': 0.0,   # 初始化为0
+        'registration_time': datetime.now().isoformat(),
+        'uploaded_files': [],
+        'referenced_files': []  #这个字段存在
+        } 
+        save_users(users)
+
     # 检查钱包地址是否已存在
     conn = get_db_connection()
     existing_user = conn.execute('SELECT * FROM users WHERE wallet_account = ?', (wallet_address,)).fetchone()
@@ -427,27 +478,6 @@ def connect_wallet():
             'user_id': existing_user['user_id'],
             'wallet_account': existing_user['wallet_account']
         })
-    
-
-    #检查用户是否在列表
-    users = load_users()
-    user_id = wallet_address
-    password = '123456'
-    
-    if user_id in users:
-        print("钱包用户已在列表")
-    else:
-        users[user_id] = {
-        'password_hash': hash_password(password),
-        'coin_balance': 1.0,
-        'total_earned': 0.0,  #初始化为0
-        'total_spent': 0.0,   # 初始化为0
-        'registration_time': datetime.now().isoformat(),
-        'uploaded_files': [],
-        'referenced_files': []  #这个字段存在
-        } 
-        save_users(users)
-
 
     # 钱包地址不存在，创建新用户
     try:
@@ -580,10 +610,17 @@ def record_transaction(tx_type, from_user, to_user, amount, file_owner=None, fil
 
 @app.route('/profile')
 def user_profile():
-    if 'user_id' not in session:
-        return redirect('/login')
+    users = load_users()
+    wallet_address = request.args.get('wallet_address', '').strip()
+    print("wallet_address:", wallet_address)
+
+    print("wallet_address:", wallet_address)
+
+    if wallet_address not in users:
+        return jsonify({'success': False, 'message': '钱包未注册，请先连接钱包'})
     
-    user_id = session['user_id']
+    user_id = wallet_address
+
     
     # 🎯 重新计算用户收益确保数据准确
     total_earned, total_spent, _ = calculate_user_earnings(user_id)
@@ -700,6 +737,11 @@ def save_shared_file(user_id, filename, content, authorize_rag=True):
     }
     
     save_files(files)
+
+    users = load_users()
+    if user_id in users:
+        users[user_id]['uploaded_files'].append(file_id)
+        save_users(users)
     
     # 使用数据库添加上传文件记录
     add_uploaded_file(user_id, file_id)
@@ -724,35 +766,62 @@ def add_file_to_vector_store(filepath, file_id, user_id, filename,ipfs_url):
         print(f"添加文件到向量库失败: {e}")
         raise
 
-# 在 app.py 中找到 search_files 函数，并进行类似如下修改
-def search_files(file_id=None, user_id=None, keyword=None):
-    files = load_files()
+# # 在 app.py 中找到 search_files 函数，并进行类似如下修改
+# def search_files(file_id=None, user_id=None, keyword=None):
+#     files = load_files()
+#     results = []
+    
+#     for fid, file_info in files.items():
+#         match = True
+        
+#         if file_id and fid != file_id:
+#             match = False
+#         if user_id and file_info['user_id'] != user_id:
+#             match = False
+#         if keyword:
+#             # 扩展搜索范围：同时匹配文件ID、文件名和文件内容
+#             keyword_lower = keyword.lower()
+#             file_id_match = (fid.lower().find(keyword_lower) != -1)
+#             filename_match = (file_info['filename'].lower().find(keyword_lower) != -1)
+#             content_match = (file_info['content'].lower().find(keyword_lower) != -1)
+            
+#             if not (file_id_match or filename_match or content_match):
+#                 match = False
+                
+#         if match:
+#             results.append({
+#                 'file_id': fid,
+#                 **file_info
+#             })
+    
+#     return sorted(results, key=lambda x: x['upload_time'], reverse=True)
+
+def search_files_in_content(files, keyword):
+    """在文件内容中搜索关键词"""
+    keyword_lower = keyword.lower()
     results = []
     
-    for fid, file_info in files.items():
-        match = True
-        
-        if file_id and fid != file_id:
-            match = False
-        if user_id and file_info['user_id'] != user_id:
-            match = False
-        if keyword:
-            # 扩展搜索范围：同时匹配文件ID、文件名和文件内容
-            keyword_lower = keyword.lower()
-            file_id_match = (fid.lower().find(keyword_lower) != -1)
-            filename_match = (file_info['filename'].lower().find(keyword_lower) != -1)
-            content_match = (file_info['content'].lower().find(keyword_lower) != -1)
+    for file_id, file_data in files.items():
+        # 搜索文件名
+        if keyword_lower in file_data.get('filename', '').lower():
+            results.append(file_id)
+            continue
             
-            if not (file_id_match or filename_match or content_match):
-                match = False
-                
-        if match:
-            results.append({
-                'file_id': fid,
-                **file_info
-            })
+        # 搜索文件内容
+        if keyword_lower in file_data.get('content', '').lower():
+            results.append(file_id)
+            continue
+            
+        # 搜索文件ID
+        if keyword_lower in file_id.lower():
+            results.append(file_id)
+            continue
+            
+        # 搜索用户ID
+        if keyword_lower in file_data.get('user_id', '').lower():
+            results.append(file_id)
     
-    return sorted(results, key=lambda x: x['upload_time'], reverse=True)
+    return results
 
 
 # ==================== 智能奖励分配系统 ====================
@@ -912,6 +981,21 @@ def distribute_rewards(user_id, question, relevant_docs, total_cost):
                         # 更新文件统计
                         files[file_id]['reference_count'] += 1
                         files[file_id]['total_reward'] += reward_amount
+
+                        users=load_users()
+                        if 'referenced_files' not in users[file_owner]:
+                            users[file_owner]['referenced_files'] = []
+                    
+                        reference_record = {
+                                'file_id': file_id,
+                                'question': question,
+                                'reward': reward_amount,
+                                'timestamp': datetime.now().isoformat(),
+                                'similarity': reward_info.get('similarity', 0),
+                                'weight': reward_info.get('weight', 0)
+                                }           
+                        users[file_owner]['referenced_files'].append(reference_record)
+                        save_users(users)
                         
                         total_distributed += reward_amount
                         
@@ -1514,32 +1598,32 @@ def log_transaction(transaction):
         json.dump(logs, f, ensure_ascii=False, indent=2)
 # ==================== Flask 路由 ====================
 
-@app.route('/')
-def index():
-    if 'user_id' in session:
-        return redirect('/dashboard')
-    return render_template('index.html')
+# @app.route('/')
+# def index():
+#     if 'user_id' in session:
+#         return redirect('/dashboard')
+#     return render_template('index.html')
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        # 支持表单数据和JSON数据
-        if request.is_json:
-            data = request.get_json()
-            user_id = data.get('username', '').strip()
-            password = data.get('password', '').strip()
-        else:
-            user_id = request.form.get('user_id', '').strip()
-            password = request.form.get('password', '').strip()
+# @app.route('/login', methods=['GET', 'POST'])
+# def login():
+#     if request.method == 'POST':
+#         # 支持表单数据和JSON数据
+#         if request.is_json:
+#             data = request.get_json()
+#             user_id = data.get('username', '').strip()
+#             password = data.get('password', '').strip()
+#         else:
+#             user_id = request.form.get('user_id', '').strip()
+#             password = request.form.get('password', '').strip()
         
-        success, message = authenticate_user(user_id, password)
-        if success:
-            session['user_id'] = user_id
-            return jsonify({'success': True, 'message': message})
-        else:
-            return jsonify({'success': False, 'message': message})
+#         success, message = authenticate_user(user_id, password)
+#         if success:
+#             session['user_id'] = user_id
+#             return jsonify({'success': True, 'message': message})
+#         else:
+#             return jsonify({'success': False, 'message': message})
     
-    return render_template('login.html')
+#     return render_template('login.html')
 
 # @app.route('/register', methods=['GET', 'POST'])
 # def register():
@@ -1556,42 +1640,50 @@ def login():
     
 #     return render_template('register.html')
 
-@app.route('/logout')
-def logout():
-    session.pop('user_id', None)
-    return redirect('/')
+# @app.route('/logout')
+# def logout():
+#     session.pop('user_id', None)
+#     return redirect('/')
 
-@app.route('/dashboard')
-def dashboard():
-    if 'user_id' not in session:
-        return redirect('/login')
+# @app.route('/dashboard')
+# def dashboard():
+#     # if 'user_id' not in session:
+#     #     return redirect('/login')
+#     users = load_users()
+
+#     wallet_address = request.form.get('wallet_address', '').strip()
+#     print("wallet_address:", wallet_address)
+
+#     # print("wallet_address:", wallet_address)
+
+#     if wallet_address not in users:
+#         return jsonify({'success': False, 'message': '钱包未注册，请先连接钱包'})
     
-    user_stats = get_user_stats(session['user_id'])
-    shared_files = search_files(user_id=session['user_id'])
+#     user_id = wallet_address
     
-    vector_count = vector_store._collection.count() if vector_store else 0
+#     user_stats = get_user_status(user_id )
+#     shared_files = search_files(user_id=wallet_address)
     
-    return render_template('dashboard.html', 
-                         user_id=session['user_id'],
-                         stats=user_stats,
-                         files=shared_files,
-                         vector_count=vector_count)
+#     vector_count = vector_store._collection.count() if vector_store else 0
+    
+#     return render_template('dashboard.html', 
+#                          user_id=wallet_address,
+#                          stats=user_stats,
+#                          files=shared_files,
+#                          vector_count=vector_count)
 
 
 
 @app.route('/share', methods=['POST'])
 def share_file():
-    # print(session)
-    # print('user_id')
+
     users = load_users()
 
     wallet_address = request.form.get('wallet_address', '').strip()
     print("wallet_address:", wallet_address)
-    # data = request.get_json(silent=True) or {}
-    # wallet_address = data.get('wallet_address')
-    print("wallet_address:", wallet_address)
-    # wallet_address = request.form.get('wallet_address', '').strip()
-    # print(wallet_address)
+
+    # print("wallet_address:", wallet_address)
+
     if wallet_address not in users:
         return jsonify({'success': False, 'message': '钱包未注册，请先连接钱包'})
     
@@ -1647,26 +1739,17 @@ def get_file_content(file_id):
 
 @app.route('/ask')
 def ask_stream():
-    # # 为了测试，允许未登录用户使用默认测试账号
-    # if 'user_id' not in session:
-    #     # 使用默认测试账号
-    #     user_id = 'test0'
-    # else:
-    #     user_id = session['user_id']
+
     users = load_users()
     wallet_address = request.args.get('wallet_address', '').strip()
     print("wallet_address:", wallet_address)
-    # data = request.get_json(silent=True) or {}
-    # wallet_address = data.get('wallet_address')
-    print("wallet_address:", wallet_address)
-    # wallet_address = request.form.get('wallet_address', '').strip()
-    # print(wallet_address)
+
+
+
     if wallet_address not in users:
         return jsonify({'success': False, 'message': '钱包未注册，请先连接钱包'})
     
     user_id = wallet_address
-
-
 
     question = request.args.get('q', '').strip()
     
@@ -1928,13 +2011,13 @@ def ask_stream():
     return Response(generate_response(), mimetype='text/event-stream')
 
 
-@app.route('/community')
-def community():
-    if 'user_id' not in session:
-        return redirect('/login')
+# @app.route('/community')
+# def community():
+#     if 'user_id' not in session:
+#         return redirect('/login')
     
-    files = search_files()
-    return render_template('community.html', files=files, session=session)
+#     files = search_files()
+#     return render_template('community.html', files=files, session=session)
 
 @app.route('/file_detail/<file_id>')
 def file_detail(file_id):
@@ -2108,61 +2191,254 @@ def health_check():
     
     return jsonify(status)
 
-@app.route('/files')
-def list_files():
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'message': '请先登录'})
+# @app.route('/files')
+# def list_files():
+#     if 'user_id' not in session:
+#         return jsonify({'success': False, 'message': '请先登录'})
     
-    keyword = request.args.get('keyword', '').strip()
-    file_id = request.args.get('file_id', '').strip()
+#     keyword = request.args.get('keyword', '').strip()
+#     file_id = request.args.get('file_id', '').strip()
     
-    # 🎯 优化搜索逻辑
-    files = search_files(file_id=file_id if file_id else None, keyword=keyword)
+#     # 🎯 优化搜索逻辑
+#     files = search_files(file_id=file_id if file_id else None, keyword=keyword)
     
-    print(f"🔍 搜索请求 - 关键词: '{keyword}', 文件ID: '{file_id}', 结果数量: {len(files)}")
+#     print(f"🔍 搜索请求 - 关键词: '{keyword}', 文件ID: '{file_id}', 结果数量: {len(files)}")
     
-    return jsonify({
-        'success': True,
-        'files': files,
-        'count': len(files)
-    })
+#     return jsonify({
+#         'success': True,
+#         'files': files,
+#         'count': len(files)
+#     })
 
-def search_files(file_id=None, user_id=None, keyword=None):
-    """优化文件搜索功能"""
-    files = load_files()
-    results = []
+# def search_files(file_id=None, user_id=None, keyword=None):
+#     """优化文件搜索功能"""
+#     files = load_files()
+#     results = []
     
-    print(f"🔍 搜索文件 - file_id: {file_id}, user_id: {user_id}, keyword: {keyword}")
+#     print(f"🔍 搜索文件 - file_id: {file_id}, user_id: {user_id}, keyword: {keyword}")
     
-    for fid, file_info in files.items():
-        match = True
+#     for fid, file_info in files.items():
+#         match = True
         
-        if file_id and fid != file_id:
-            match = False
-        if user_id and file_info['user_id'] != user_id:
-            match = False
-        if keyword:
-            keyword_lower = keyword.lower()
-            # 🎯 优化：在文件名和内容中搜索，提高搜索准确性
-            filename_match = keyword_lower in file_info['filename'].lower()
-            content_match = keyword_lower in file_info['content'].lower()
-            file_id_match = keyword_lower in fid.lower()
-            user_id_match = keyword_lower in file_info['user_id'].lower()
+#         if file_id and fid != file_id:
+#             match = False
+#         if user_id and file_info['user_id'] != user_id:
+#             match = False
+#         if keyword:
+#             keyword_lower = keyword.lower()
+#             # 🎯 优化：在文件名和内容中搜索，提高搜索准确性
+#             filename_match = keyword_lower in file_info['filename'].lower()
+#             content_match = keyword_lower in file_info['content'].lower()
+#             file_id_match = keyword_lower in fid.lower()
+#             user_id_match = keyword_lower in file_info['user_id'].lower()
             
-            if not (filename_match or content_match or file_id_match or user_id_match):
-                match = False
+#             if not (filename_match or content_match or file_id_match or user_id_match):
+#                 match = False
                 
-        if match:
-            results.append({
-                'file_id': fid,
-                **file_info
+#         if match:
+#             results.append({
+#                 'file_id': fid,
+#                 **file_info
+#             })
+    
+#     # 按上传时间倒序排列
+#     sorted_results = sorted(results, key=lambda x: x['upload_time'], reverse=True)
+    
+#     print(f"✅ 搜索完成，找到 {len(sorted_results)} 个文件")
+#     return sorted_results
+
+@app.route('/community/files', methods=['GET'])
+def get_community_files():
+    """获取社区所有文件或搜索文件"""
+    try:
+        print("📥 收到社区文件请求")
+        
+        # 获取搜索关键词
+        keyword = request.args.get('keyword', '').strip()
+        print(f"🔍 搜索关键词: '{keyword}'")
+        
+        # 加载文件数据
+        files = load_files()
+        
+        if not files:
+            print("⚠️ files.json为空或不存在")
+            return jsonify({
+                'success': True,
+                'message': '暂无文件数据',
+                'files': [],
+                'total_count': 0
             })
-    
-    # 按上传时间倒序排列
-    sorted_results = sorted(results, key=lambda x: x['upload_time'], reverse=True)
-    
-    print(f"✅ 搜索完成，找到 {len(sorted_results)} 个文件")
-    return sorted_results
+        
+        # 处理文件数据
+        file_list = []
+        
+        if keyword:
+            # 执行搜索
+            print(f"🔍 开始搜索，关键词: {keyword}")
+            search_results = search_files_in_content(files, keyword)
+            print(f"✅ 找到 {len(search_results)} 个匹配文件")
+            
+            for file_id in search_results:
+                file_data = files[file_id]
+                file_list.append({
+                    'file_id': file_id,
+                    'filename': file_data.get('filename', ''),
+                    'user_id': file_data.get('user_id', ''),
+                    'content': file_data.get('content_preview', file_data.get('content', '')),
+                    'content_full': file_data.get('content', ''),
+                    'upload_time': file_data.get('upload_time', ''),
+                    'reference_count': file_data.get('reference_count', 0),
+                    'total_reward': file_data.get('total_reward', 0.0),
+                    'authorize_rag': file_data.get('authorize_rag', False),
+                    'ipfs_url': file_data.get('ipfs_url', '')
+                })
+        else:
+            # 返回所有文件
+            print(f"📂 返回所有文件，共 {len(files)} 个")
+            for file_id, file_data in files.items():
+                file_list.append({
+                    'file_id': file_id,
+                    'filename': file_data.get('filename', ''),
+                    'user_id': file_data.get('user_id', ''),
+                    'content': file_data.get('content_preview', file_data.get('content', '')),
+                    'content_full': file_data.get('content', ''),
+                    'upload_time': file_data.get('upload_time', ''),
+                    'reference_count': file_data.get('reference_count', 0),
+                    'total_reward': file_data.get('total_reward', 0.0),
+                    'authorize_rag': file_data.get('authorize_rag', False),
+                    'ipfs_url': file_data.get('ipfs_url', '')
+                })
+        
+        # 按上传时间倒序排序
+        file_list.sort(key=lambda x: x.get('upload_time', ''), reverse=True)
+        
+        print(f"✅ 返回 {len(file_list)} 个文件")
+        return jsonify({
+            'success': True,
+            'message': '文件数据获取成功',
+            'files': file_list,
+            'total_count': len(file_list)
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取社区文件时发生错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'服务器错误: {str(e)}',
+            'files': [],
+            'total_count': 0
+        }), 500
+
+@app.route('/community/file/<file_id>', methods=['GET'])
+def get_file_detail(file_id):
+    """获取单个文件的详细信息"""
+    try:
+        print(f"📥 获取文件详情，文件ID: {file_id}")
+        
+        # 加载文件数据
+        files = load_files()
+        
+        if not files:
+            print("⚠️ files.json为空或不存在")
+            return jsonify({
+                'success': False,
+                'message': '文件数据库为空'
+            }), 404
+        
+        if file_id not in files:
+            print(f"❌ 文件不存在: {file_id}")
+            return jsonify({
+                'success': False,
+                'message': '文件不存在'
+            }), 404
+        
+        file_data = files[file_id]
+        
+        # 获取用户信息（如果需要）
+        user_id = file_data.get('user_id', '')
+        
+        print(f"✅ 找到文件: {file_data.get('filename')}")
+        return jsonify({
+            'success': True,
+            'message': '文件详情获取成功',
+            'file_info': {
+                'file_id': file_id,
+                'filename': file_data.get('filename', ''),
+                'user_id': user_id,
+                'content': file_data.get('content', ''),
+                'content_preview': file_data.get('content_preview', ''),
+                'upload_time': file_data.get('upload_time', ''),
+                'reference_count': file_data.get('reference_count', 0),
+                'total_reward': file_data.get('total_reward', 0.0),
+                'authorize_rag': file_data.get('authorize_rag', False),
+                'ipfs_url': file_data.get('ipfs_url', ''),
+                'file_path': file_data.get('file_path', '')
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取文件详情时发生错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'服务器错误: {str(e)}'
+        }), 500
+
+@app.route('/community/stats', methods=['GET'])
+def get_community_stats():
+    """获取社区统计信息"""
+    try:
+        print("📊 获取社区统计信息")
+        
+        files = load_files()
+        
+        if not files:
+            print("⚠️ files.json为空或不存在")
+            return jsonify({
+                'success': True,
+                'message': '暂无统计信息',
+                'stats': {
+                    'total_files': 0,
+                    'total_references': 0,
+                    'total_rewards': 0.0,
+                    'active_authors': 0
+                }
+            })
+        
+        # 计算统计数据
+        total_files = len(files)
+        total_references = sum(f.get('reference_count', 0) for f in files.values())
+        total_rewards = sum(f.get('total_reward', 0.0) for f in files.values())
+        
+        # 统计活跃作者
+        authors = set()
+        for file_data in files.values():
+            authors.add(file_data.get('user_id', ''))
+        active_authors = len(authors)
+        
+        print(f"📊 社区统计: 文件={total_files}, 引用={total_references}, 收益={total_rewards}, 作者={active_authors}")
+        
+        return jsonify({
+            'success': True,
+            'message': '统计信息获取成功',
+            'stats': {
+                'total_files': total_files,
+                'total_references': total_references,
+                'total_rewards': total_rewards,
+                'active_authors': active_authors
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取社区统计时发生错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'服务器错误: {str(e)}'
+        }), 500
+
 
 # WebSocket事件处理
 @socketio.on('connect', namespace='/ws')
@@ -2259,6 +2535,264 @@ def test_simple_ask():
         error_detail = traceback.format_exc()
         print(f"简单提问测试失败:\n{error_detail}")
         return jsonify({'status': 'error', 'message': str(e), 'detail': error_detail}), 500
+
+
+@app.route('/dashboard', methods=['GET'])
+@app.route('/api/dashboard', methods=['GET'])
+def get_dashboard_data():
+    """获取仪表盘数据 - 同时支持 /dashboard 和 /api/dashboard 路径"""
+    wallet_address = request.args.get('wallet_address', '').strip()
+    
+    print(f"📊 Dashboard API 调用，钱包地址: {wallet_address}")
+    
+    if not wallet_address:
+        print("⚠️ 钱包地址为空")
+        return jsonify({'success': False, 'message': '钱包地址不能为空'})
+    
+    # 从JSON文件加载数据
+    users = load_users()
+    
+    print(f"🔍 检查用户是否存在，钱包地址: {wallet_address}")
+    print(f"📁 用户列表中的用户: {list(users.keys())}")
+    
+    # 检查用户是否存在
+    if wallet_address not in users:
+        # 检查是否作为wallet_account存在
+        user_found = False
+        user_id = None
+        for uid, user_data in users.items():
+            if user_data.get('wallet_account') == wallet_address:
+                user_found = True
+                user_id = uid
+                print(f"✅ 通过wallet_account找到用户: {uid}")
+                break
+        
+        if not user_found:
+            print(f"❌ 用户不存在于users.json: {wallet_address}")
+            return jsonify({'success': False, 'message': '钱包未注册，请先连接钱包'})
+    else:
+        user_id = wallet_address
+        print(f"✅ 用户ID直接匹配: {user_id}")
+    
+    user_data = users[user_id]
+    
+    # 计算统计数据
+    # 1. 总收益 - 直接从users.json获取
+    total_earned = user_data.get('total_earned', 0.0)
+    print(f"💰 总收益: {total_earned}")
+    
+    # 2. Data NFT数量（上传的文件数量）
+    data_nft_count = len(user_data.get('uploaded_files', []))
+    print(f"📁 Data NFT数量: {data_nft_count}")
+    
+    # 3. AI调用次数（今日引用次数）
+    transactions = load_transactions()
+    today = datetime.now().date()
+    
+    ai_calls_today = 0
+    for tx in transactions:
+        tx_time = datetime.fromisoformat(tx['timestamp']).date()
+        if tx_time == today and tx.get('file_owner') == user_id and tx['type'] == 'reference':
+            ai_calls_today += 1
+    
+    print(f"🤖 今日AI调用次数: {ai_calls_today}")
+    
+    # 4. 本月增长（本月收益）
+    current_month = datetime.now().strftime('%Y-%m')
+    monthly_growth = 0.0
+    
+    for tx in transactions:
+        if tx['type'] == 'reward' and tx['to_user'] == user_id:
+            tx_time = datetime.fromisoformat(tx['timestamp'])
+            if tx_time.strftime('%Y-%m') == current_month:
+                monthly_growth += tx['amount']
+    
+    print(f"📈 本月增长: {monthly_growth}")
+    
+    # 获取最近活动（交易记录）
+    recent_activity = []
+    user_transactions = []
+    
+    for tx in transactions:
+        if tx['from_user'] == user_id or tx['to_user'] == user_id or tx.get('file_owner') == user_id:
+            user_transactions.append(tx)
+    
+    # 按时间倒序排列，取最近5条
+    user_transactions.sort(key=lambda x: x['timestamp'], reverse=True)
+    
+    for i, tx in enumerate(user_transactions[:5]):
+        activity_type = ""
+        content = ""
+        
+        if tx['type'] == 'reward' and tx['to_user'] == user_id:
+            activity_type = "收益"
+            content = f"AI 模型调用收益 +{tx['amount']:.6f} USDT"
+        elif tx['type'] == 'spend' and tx['from_user'] == user_id:
+            activity_type = "支出"
+            content = f"AI 提问支出 -{tx['amount']:.6f} USDT"
+        elif tx['type'] == 'reference' and tx.get('file_owner') == user_id:
+            activity_type = "引用"
+            content = f"您的内容被 AI 引用"
+        elif tx['type'] == 'reward' and tx.get('file_owner') == user_id:
+            activity_type = "收益"
+            content = f"数据授权收益 +{tx['amount']:.6f} USDT"
+        
+        if activity_type:
+            # 计算相对时间
+            tx_time = datetime.fromisoformat(tx['timestamp'])
+            now = datetime.now()
+            time_diff = now - tx_time
+            
+            if time_diff.total_seconds() < 3600:
+                time_str = f"{int(time_diff.total_seconds() / 60)}分钟前"
+            elif time_diff.total_seconds() < 86400:
+                time_str = f"{int(time_diff.total_seconds() / 3600)}小时前"
+            else:
+                time_str = f"{int(time_diff.total_seconds() / 86400)}天前"
+            
+            recent_activity.append({
+                'id': i + 1,
+                'type': activity_type,
+                'content': content,
+                'time': time_str,
+                'timestamp': tx['timestamp']
+            })
+    
+    # 获取内容溯源（用户上传的文件信息）
+    files = load_files()
+    content_tracing = []
+    
+    uploaded_file_ids = user_data.get('uploaded_files', [])
+    print(f"📄 用户上传的文件ID: {uploaded_file_ids}")
+    
+    for file_id in uploaded_file_ids[:5]:  # 只取前5个文件
+        if file_id in files:
+            file_info = files[file_id]
+            content_tracing.append({
+                'file_id': file_id,
+                'filename': file_info['filename'],
+                'reference_count': file_info.get('reference_count', 0),
+                'total_reward': file_info.get('total_reward', 0.0),
+                'content_preview': file_info.get('content_preview', ''),
+                'ipfs_url': file_info.get('ipfs_url', ''),
+                'authorize_rag': file_info.get('authorize_rag', False)
+            })
+        else:
+            print(f"⚠️ 文件不存在: {file_id}")
+    
+    print(f"✅ 数据准备完成，返回给前端")
+    
+    # 格式化数据
+    return jsonify({
+        'success': True,
+        'message': '数据获取成功',
+        'data': {
+            'stats': {
+                'total_earned': {
+                    'label': '总收益',
+                    'value': f"{total_earned:.6f} USDT",
+                    'raw_value': total_earned
+                },
+                'data_nft': {
+                    'label': 'Data NFT',
+                    'value': str(data_nft_count),
+                    'raw_value': data_nft_count
+                },
+                'ai_calls': {
+                    'label': 'AI 调用次数',
+                    'value': str(ai_calls_today),
+                    'raw_value': ai_calls_today
+                },
+                'monthly_growth': {
+                    'label': '本月增长',
+                    'value': f"+{monthly_growth:.6f} USDT" if monthly_growth > 0 else f"{monthly_growth:.6f} USDT",
+                    'raw_value': monthly_growth
+                }
+            },
+            'recent_activity': recent_activity,
+            'content_tracing': content_tracing,
+            'user_info': {
+                'user_id': user_id,
+                'wallet_address': user_data.get('wallet_account', user_id),
+                'coin_balance': user_data.get('coin_balance', 0.0),
+                'total_earned': user_data.get('total_earned', 0.0),
+                'total_spent': user_data.get('total_spent', 0.0)
+            }
+        }
+    })
+
+
+
+@app.route('/dashboard', methods=['GET'])
+def dashboard_api():
+    """Dashboard API - 用于代理转发的路由"""
+    # 这里直接调用 get_dashboard_data 函数
+    return get_dashboard_data()
+
+@app.route('/api/user/stats', methods=['GET'])
+def get_user_stats_api():
+    """获取用户统计信息（简化版）- 只使用JSON文件"""
+    wallet_address = request.args.get('wallet_address', '').strip()
+    
+    if not wallet_address:
+        return jsonify({'success': False, 'message': '钱包地址不能为空'})
+    
+    # 从JSON文件加载数据
+    users = load_users()
+    
+    # 检查用户是否存在
+    if wallet_address not in users:
+        # 检查是否作为wallet_account存在
+        user_found = False
+        user_id = None
+        for uid, user_data in users.items():
+            if user_data.get('wallet_account') == wallet_address:
+                user_found = True
+                user_id = uid
+                break
+        
+        if not user_found:
+            return jsonify({'success': False, 'message': '用户不存在'})
+    else:
+        user_id = wallet_address
+    
+    user_data = users[user_id]
+    
+    # 获取今日收益和引用
+    today = datetime.now().date()
+    transactions = load_transactions()
+    
+    today_earned = 0.0
+    today_references = 0
+    
+    for tx in transactions:
+        tx_time = datetime.fromisoformat(tx['timestamp']).date()
+        if tx_time == today:
+            if tx['type'] == 'reward' and tx['to_user'] == user_id:
+                today_earned += tx['amount']
+            elif tx['type'] == 'reference' and tx.get('file_owner') == user_id:
+                today_references += 1
+    
+    # 获取上传文件数量
+    uploaded_files_count = len(user_data.get('uploaded_files', []))
+    
+    return jsonify({
+        'success': True,
+        'data': {
+            'coin_balance': user_data.get('coin_balance', 0.0),
+            'total_earned': user_data.get('total_earned', 0.0),
+            'total_spent': user_data.get('total_spent', 0.0),
+            'today_earned': today_earned,
+            'today_references': today_references,
+            'uploaded_files_count': uploaded_files_count,
+            'wallet_address': user_data.get('wallet_account', user_id)
+        }
+    })
+
+
+
+
+
 
 
 if __name__ == '__main__':
