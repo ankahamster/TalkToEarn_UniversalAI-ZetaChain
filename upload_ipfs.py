@@ -78,7 +78,7 @@ def upload_text_and_get_preview_url(text_content: str,
     print(f"文本预览链接: {preview_url}")
     print(f"Metadata Token URI: {token_uri}")
     
-    return preview_url
+    return preview_url,token_uri
 
 # 示例：直接运行时测试
 if __name__ == "__main__":

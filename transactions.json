@@ -273,5 +273,38 @@
     "file_id": "20251220024212_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
     "question": "什么是睡眠",
     "timestamp": "2025-12-20T13:50:40.636167"
+  },
+  {
+    "id": "0098cece-7d40-4cb0-8e98-b27d2e1aa7cb",
+    "type": "spend",
+    "from_user": "0x6d94e87fa68cc9b474d3e29141bb11930b5056b1",
+    "to_user": "system",
+    "amount": 1e-06,
+    "file_owner": null,
+    "file_id": null,
+    "question": "什么是爱",
+    "timestamp": "2025-12-20T18:51:53.772458"
+  },
+  {
+    "id": "03db7f13-88b6-45af-96bf-0947bdb5fd17",
+    "type": "reward",
+    "from_user": null,
+    "to_user": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "amount": 1e-06,
+    "file_owner": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "file_id": "20251220024142_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "question": "什么是爱",
+    "timestamp": "2025-12-20T18:52:06.214925"
+  },
+  {
+    "id": "97d24dcd-d674-46b8-a412-700253c351cd",
+    "type": "reference",
+    "from_user": "0x6d94e87fa68cc9b474d3e29141bb11930b5056b1",
+    "to_user": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "amount": 0.0,
+    "file_owner": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "file_id": "20251220024142_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "question": "什么是爱",
+    "timestamp": "2025-12-20T18:52:06.214925"
   }
 ]

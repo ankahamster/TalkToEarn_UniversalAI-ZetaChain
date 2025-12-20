@@ -8,7 +8,8 @@ import { Upload as UploadIcon, FileText, Image, RefreshCw, Database, Loader2 } f
 import { useState } from "react";
 import { toast } from "sonner";
 import { useWeb3 } from "@/hooks/useWeb3";
-
+import { ethers } from "ethers";
+import nftAbi from "@/abi/SimpleMintOnlyNFT_abi.json"; // ABI 路径按你项目实际来
 
 const Upload = () => {
   const [content, setContent] = useState("");
@@ -21,8 +22,161 @@ const Upload = () => {
     vectorCount: 0,
     lastUpdated: null
   });
-  const { account, isConnected } = useWeb3();
+  
+  // 🎯 修改：从 useWeb3 获取 provider 和 signer
+  const { account, isConnected, provider } = useWeb3();
 
+  // 🎯 修改后的 mintNFT 函数 - 使用 ZetaChain 兼容的 provider
+  const mintNFT = async (tokenUri: string) => {
+    console.log("🎬 开始执行 mintNFT 函数");
+    console.log("📄 接收到的 tokenUri:", tokenUri);
+    console.log("👛 当前账户:", account);
+    console.log("🔗 Provider 状态:", provider ? "已连接" : "未连接");
+
+    // 检查 provider 是否可用
+    if (!provider) {
+      console.error("❌ 未检测到钱包 provider");
+      toast.error("请先连接钱包");
+      return;
+    }
+
+    // 检查 tokenUri
+    if (!tokenUri || tokenUri.trim() === "") {
+      console.error("❌ Token URI 为空");
+      toast.error("Token URI 无效，无法铸造 NFT");
+      return;
+    }
+
+    try {
+      console.log("🔗 连接钱包提供者...");
+      
+      // 🎯 使用从 useWeb3 获取的 provider 获取 signer
+      let signer;
+      try {
+        signer = await provider.getSigner();
+        const signerAddress = await signer.getAddress();
+        console.log("✅ 获取到签名者:", signerAddress);
+        
+        // 验证签名者地址是否匹配当前账户
+        if (signerAddress.toLowerCase() !== account.toLowerCase()) {
+          console.warn("⚠️ 签名者地址与当前账户不匹配");
+          console.log("签名者地址:", signerAddress);
+          console.log("当前账户:", account);
+        }
+      } catch (signerError) {
+        console.error("❌ 获取签名者失败:", signerError);
+        toast.error("请确认钱包已解锁并授权");
+        return;
+      }
+
+      // 🎯 确保合约地址正确（ZetaChain 上的合约地址）
+      // 注意：你需要确认这个地址是否部署在 ZetaChain 上
+      const CONTRACT_ADDRESS = "0x7abbD946795CEf5Afc33DEb4f1b4DD59F534f7Ec";
+      console.log("📝 合约地址:", CONTRACT_ADDRESS);
+      console.log("📝 ABI 长度:", nftAbi.length);
+
+      // 创建合约实例
+      const contract = new ethers.Contract(
+        CONTRACT_ADDRESS,
+        nftAbi,
+        signer
+      );
+
+      console.log("🔄 正在调用 mint 方法...");
+      console.log("📤 参数: 账户 =", account, "tokenUri =", tokenUri);
+      
+      // 显示交易确认提示
+      toast.info("请在钱包中确认交易", {
+        duration: 10000,
+      });
+
+      try {
+        // 调用合约的 mint 方法
+        console.log("⏳ 发送交易请求...");
+        const tx = await contract.mint(account, tokenUri);
+        console.log("✅ 交易已发送，哈希:", tx.hash);
+        
+        // 显示交易哈希
+        toast.info(`交易已发送，哈希: ${tx.hash.slice(0, 10)}...`, {
+          duration: 8000,
+        });
+
+        // 等待交易确认
+        console.log("⏳ 等待交易确认...");
+        const receipt = await tx.wait();
+        console.log("✅ 交易已确认，区块:", receipt.blockNumber);
+        console.log("📊 交易详情:", receipt);
+
+        // 提取 tokenId（根据你的合约事件结构调整）
+        let tokenId = "未知";
+        if (receipt.logs && receipt.logs.length > 0) {
+          try {
+            // 尝试解析事件日志
+            const eventLog = receipt.logs[0];
+            // 这里需要根据你的合约事件结构来解析
+            // 假设你的 NFT 合约有一个 Transfer 事件，包含 tokenId
+            // tokenId = eventLog.args.tokenId.toString();
+            tokenId = "成功铸造"; // 简化处理
+          } catch (logError) {
+            console.warn("无法解析事件日志，但交易成功:", logError);
+          }
+        }
+
+        console.log("🎉 NFT 铸造成功！Token ID:", tokenId);
+        toast.success("NFT 铸造成功！");
+
+        // 记录到后端
+        try {
+          await fetch("/api/nft_minted", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              wallet_address: account,
+              contract_address: CONTRACT_ADDRESS,
+              token_id: tokenId,
+              token_uri: tokenUri,
+              tx_hash: receipt.hash,
+              network: "ZetaChain" // 🎯 添加网络信息
+            }),
+          });
+          console.log("✅ NFT 信息已记录到后端");
+        } catch (apiError) {
+          console.warn("⚠️ 记录 NFT 信息到后端失败:", apiError);
+          // 不阻止用户继续操作
+        }
+
+      } catch (txError: any) {
+        console.error("❌ 交易失败:");
+        console.error("错误代码:", txError.code);
+        console.error("错误信息:", txError.message);
+        console.error("完整错误:", txError);
+
+        // 处理常见错误
+        if (txError.code === 4001) {
+          toast.error("用户拒绝了交易");
+        } else if (txError.message.includes("insufficient funds")) {
+          toast.error("Gas费用不足");
+        } else if (txError.message.includes("network changed")) {
+          toast.error("网络已切换，请重新连接");
+        } else if (txError.message.includes("execution reverted")) {
+          toast.error("合约执行失败，请检查参数");
+        } else {
+          toast.error(`NFT 铸造失败：${txError.message || "未知错误"}`);
+        }
+        throw txError; // 重新抛出错误，让上层处理
+      }
+
+    } catch (err: any) {
+      console.error("❌ NFT 铸造过程失败:");
+      console.error("错误信息:", err.message);
+      console.error("错误详情:", err);
+      
+      // 不重复显示错误，上层已处理
+      throw err;
+    }
+  };
 
   // 重新加载知识库
   const handleReloadVectorStore = async () => {
@@ -55,7 +209,7 @@ const Upload = () => {
       }
     } catch (error) {
       console.error('重新加载知识库错误:', error);
-      toast.error("重新加载知识库失败: " + error.message);
+      toast.error("重新加载知识库失败: " + (error as Error).message);
     } finally {
       setIsReloadingVectorStore(false);
     }
@@ -92,10 +246,14 @@ const Upload = () => {
   });
 
   const handleUpload = async () => {
-
-
     if (!content || !title) {
       toast.error("请填写标题和内容");
+      return;
+    }
+
+    // 🎯 检查钱包连接状态
+    if (!isConnected || !account) {
+      toast.error("请先连接钱包");
       return;
     }
 
@@ -108,6 +266,7 @@ const Upload = () => {
       formData.append('content', content);
       formData.append('authorize_rag', authorizeRag.toString());
 
+      console.log("📤 开始上传文件到后端...");
       const response = await fetch('/api/share', {
         method: 'POST',
         body: formData,
@@ -123,9 +282,36 @@ const Upload = () => {
       }
 
       const result = await response.json();
+      console.log("📥 后端返回结果:", result);
       
       if (result.success) {
         toast.success(result.message || "文件分享成功！");
+
+        const { token_uri, preview_url, file_id } = result;
+
+        // 🎯 调试信息
+        console.log("🎯 收到后端返回的数据:");
+        console.log("token_uri:", token_uri);
+        console.log("preview_url:", preview_url);
+        console.log("file_id:", file_id);
+
+        // 🎯 检查 token_uri 是否存在
+        if (!token_uri) {
+          console.error("❌ 错误: token_uri 为空或未定义!");
+          toast.error("获取 Token URI 失败，无法铸造 NFT");
+        } else {
+          // 🎯 确保 token_uri 是字符串
+          console.log("✅ 开始铸造 NFT，Token URI:", token_uri);
+          try {
+            await mintNFT(String(token_uri));
+            toast.success("NFT 铸造完成！");
+          } catch (mintError) {
+            console.error("NFT 铸造失败:", mintError);
+            // 不阻止后续操作，文件上传已成功
+          }
+        }
+
+        // 清空表单
         setContent("");
         setTitle("");
         
@@ -142,17 +328,15 @@ const Upload = () => {
           toast.info(`文件ID: ${result.file_id}`);
         }
       } else {
+        console.error("上传失败:", result.message);
         toast.error(result.message || "上传失败");
-        if (result.message.includes('登录')) {
-          console.log('需要重新登录');
-        }
       }
     } catch (error) {
       console.error('上传错误详情:', error);
-      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         checkBackendConnection();
       } else {
-        toast.error("上传失败: " + error.message);
+        toast.error("上传失败: " + (error as Error).message);
       }
     } finally {
       setIsUploading(false);
@@ -190,6 +374,21 @@ const Upload = () => {
             <p className="text-muted-foreground text-lg">
               上传内容并铸造为 Data NFT，设置 AI 模型授权
             </p>
+            
+            {/* 🎯 添加钱包状态显示 */}
+            <div className="mt-4">
+              {isConnected ? (
+                <div className="inline-flex items-center px-4 py-2 rounded-full bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-sm">
+                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                  钱包已连接: {account.slice(0, 6)}...{account.slice(-4)}
+                </div>
+              ) : (
+                <div className="inline-flex items-center px-4 py-2 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 text-sm">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
+                  请连接钱包以铸造 NFT
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 知识库状态卡片 */}
@@ -307,12 +506,13 @@ const Upload = () => {
               <div className="pt-4 flex flex-col sm:flex-row gap-4">
                 <Button
                   onClick={handleUpload}
-                  disabled={isUploading}
+                  disabled={isUploading || !isConnected}
                   className="flex-1 shadow-glow-primary"
                   size="lg"
                 >
                   <UploadIcon className="mr-2 h-5 w-5" />
-                  {isUploading ? "上传中..." : "上传并铸造 NFT"}
+                  {isUploading ? "上传中..." : 
+                    !isConnected ? "请先连接钱包" : "上传并铸造 NFT"}
                 </Button>
                 
                 <Button
@@ -339,7 +539,9 @@ const Upload = () => {
               <div className="text-sm text-muted-foreground p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-800">
                 <p className="font-medium text-yellow-800 dark:text-yellow-300 mb-2">📌 使用提示：</p>
                 <ul className="list-disc pl-5 space-y-1">
-                  <li>上传内容后，如果勾选了"授权AI模型使用此内容进行RAG"，系统会自动重新加载知识库</li>
+                  <li>请确保钱包已连接到 ZetaChain 网络</li>
+                  <li>上传内容后，系统会自动铸造 Data NFT</li>
+                  <li>如果勾选了"授权AI模型使用此内容进行RAG"，系统会自动重新加载知识库</li>
                   <li>您也可以随时手动点击"重新加载知识库"按钮，更新AI模型的知识库</li>
                   <li>知识库包含所有授权RAG的内容，用于增强AI回答的准确性和相关性</li>
                   <li>未授权RAG的内容仍会保存，但不会用于AI模型的检索增强生成</li>
@@ -361,6 +563,13 @@ const Upload = () => {
               <div className="text-3xl font-bold text-accent mb-2">3</div>
               <p className="text-sm text-muted-foreground">设置 AI 授权</p>
             </div>
+          </div>
+          
+          {/* 🎯 添加网络信息 */}
+          <div className="mt-6 p-4 rounded-lg bg-card/30 border border-border/50">
+            <p className="text-sm text-muted-foreground text-center">
+              🔗 当前网络: ZetaChain | 请确保您的 MetaMask/钱包已切换到 ZetaChain 网络
+            </p>
           </div>
         </div>
       </main>

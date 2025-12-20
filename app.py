@@ -699,30 +699,119 @@ def user_profile():
 
 # ==================== 文件管理系统 ====================
 #增设ipfs上传功能
+# def save_shared_file(user_id, filename, content, authorize_rag=True):
+#     files = load_files()
+    
+#     # 生成文件ID - 确保格式正确
+#     file_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{user_id}"
+    
+#     # 创建文件路径 - 使用文件ID作为文件名
+#     filepath = os.path.join(SHARED_FOLDER, f"{file_id}.txt")
+#     with open(filepath, 'w', encoding='utf-8') as f:
+#         f.write(content)
+    
+#     try:
+#         preview_url,token_uri = upload_text_and_get_preview_url(
+#         text_content=content,
+#         name=filename,
+#         description=file_id,
+#         file_name=filename
+#     )
+#         print("浏览ipfs-url:", preview_url)
+        
+#     #     return jsonify({
+#     # 'success': True,
+#     # 'message': '文件分享成功',
+#     # 'file_id': file_id,
+#     # 'token_uri': token_uri,
+#     # 'preview_url': preview_url
+#     #     })
+
+#     except Exception as e:
+#         print("上传失败:", e)
+
+#     ipfs_url=str(preview_url)
+#     files[file_id] = {
+#         'filename': filename,
+#         'user_id': user_id,
+#         'content': content,
+#         'content_preview': content[:200] + "..." if len(content) > 200 else content,
+#         'upload_time': datetime.now().isoformat(),
+#         'authorize_rag': authorize_rag,
+#         'reference_count': 0,
+#         'total_reward': 0.0,
+#         'file_path': filepath,
+#         'ipfs_url': ipfs_url
+#     }
+    
+#     save_files(files)
+
+#     users = load_users()
+#     if user_id in users:
+#         users[user_id]['uploaded_files'].append(file_id)
+#         save_users(users)
+    
+#     # 使用数据库添加上传文件记录
+#     add_uploaded_file(user_id, file_id)
+    
+#     if authorize_rag:
+#         try:
+#             print(f"开始将文件添加到知识库: {file_id}, 文件名: {filename}")
+#             add_file_to_vector_store(filepath, file_id, user_id, filename,ipfs_url)
+#             print(f"成功将文件添加到知识库: {file_id}")
+#         except Exception as e:
+#             print(f"添加到知识库失败: {e}")
+    
+#     return {
+#     "file_id": file_id,
+#     "token_uri": token_uri,
+#     "preview_url": preview_url
+#     }
+
+
 def save_shared_file(user_id, filename, content, authorize_rag=True):
+    print("====== save_shared_file START ======")
+    print("user_id:", user_id)
+    print("filename:", filename)
+    print("authorize_rag:", authorize_rag)
+
     files = load_files()
-    
-    # 生成文件ID - 确保格式正确
+
     file_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{user_id}"
-    
-    # 创建文件路径 - 使用文件ID作为文件名
+    print("generated file_id:", file_id)
+
     filepath = os.path.join(SHARED_FOLDER, f"{file_id}.txt")
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(content)
-    
+
+    print("file saved to local path:", filepath)
+
+    # ⭐⭐⭐ 关键：先给默认值
+    preview_url = None
+    token_uri = None
+
+    print("start upload to IPFS ...")
+
     try:
-        preview_url = upload_text_and_get_preview_url(
-        text_content=content,
-        name=filename,
-        description=file_id,
-        file_name=filename
-    )
-        print("浏览ipfs-url:", preview_url)
+        preview_url, token_uri = upload_text_and_get_preview_url(
+            text_content=content,
+            name=filename,
+            description=file_id,
+            file_name=filename
+        )
+        print("IPFS upload success")
+        print("preview_url:", preview_url)
+        print("token_uri:", token_uri)
 
     except Exception as e:
-        print("上传失败:", e)
+        print("❌ IPFS upload failed")
+        print("error type:", type(e))
+        print("error detail:", e)
 
-    ipfs_url=str(preview_url)
+    # ⭐⭐⭐ 安全兜底
+    ipfs_url = str(preview_url) if preview_url else None
+    print("final ipfs_url used:", ipfs_url)
+
     files[file_id] = {
         'filename': filename,
         'user_id': user_id,
@@ -735,26 +824,38 @@ def save_shared_file(user_id, filename, content, authorize_rag=True):
         'file_path': filepath,
         'ipfs_url': ipfs_url
     }
-    
+
     save_files(files)
+    print("files metadata saved")
 
     users = load_users()
     if user_id in users:
         users[user_id]['uploaded_files'].append(file_id)
         save_users(users)
-    
-    # 使用数据库添加上传文件记录
+        print("user upload list updated")
+
     add_uploaded_file(user_id, file_id)
-    
-    if authorize_rag:
+    print("database record added")
+
+    if authorize_rag and ipfs_url:
         try:
-            print(f"开始将文件添加到知识库: {file_id}, 文件名: {filename}")
-            add_file_to_vector_store(filepath, file_id, user_id, filename,ipfs_url)
-            print(f"成功将文件添加到知识库: {file_id}")
+            print("start add to vector store:", file_id)
+            add_file_to_vector_store(filepath, file_id, user_id, filename, ipfs_url)
+            print("vector store success")
         except Exception as e:
-            print(f"添加到知识库失败: {e}")
-    
-    return file_id
+            print("❌ vector store failed:", e)
+    else:
+        print("skip vector store (authorize_rag or ipfs_url missing)")
+
+    print("====== save_shared_file END ======")
+
+    return {
+        "file_id": file_id,
+        "token_uri": token_uri,
+        "preview_url": preview_url
+    }
+
+
 
 def add_file_to_vector_store(filepath, file_id, user_id, filename,ipfs_url):
     global vector_store
@@ -1674,30 +1775,68 @@ def log_transaction(transaction):
 
 
 
+# @app.route('/share', methods=['POST'])
+# def share_file():
+
+#     users = load_users()
+
+#     wallet_address = request.form.get('wallet_address', '').strip()
+#     print("wallet_address:", wallet_address)
+
+#     # print("wallet_address:", wallet_address)
+
+#     if wallet_address not in users:
+#         return jsonify({'success': False, 'message': '钱包未注册，请先连接钱包'})
+    
+#     user_id = wallet_address
+
+#     # if 'user_id' not in session:
+#     #     return jsonify({'success': False, 'message': '请先连接钱包'})
+#     # 为了测试，允许未登录用户使用默认测试账号
+#     # if 'user_id' not in session:
+#     #     # 使用默认测试账号
+#     #     user_id = 'test0'
+#     # else:
+#     #     user_id = session['user_id']
+    
+#     filename = request.form.get('filename', '').strip()
+#     content = request.form.get('content', '').strip()
+#     authorize_rag = request.form.get('authorize_rag', 'false') == 'true'
+    
+#     if not filename or not content:
+#         return jsonify({'success': False, 'message': '文件名和内容不能为空'})
+    
+#     result = save_shared_file(user_id, filename, content, authorize_rag)
+
+#     return jsonify({
+#     'success': True,
+#     'message': '文件分享成功',
+#     'file_id': result["file_id"],
+#     'token_uri': result["token_uri"],
+#     'preview_url': result["preview_url"]
+#     })
+
+    
+    # file_id = save_shared_file(user_id, filename, content, authorize_rag)
+    
+    # return jsonify({
+    #     'success': True, 
+    #     'message': '文件分享成功',
+    #     'file_id': file_id
+    # })
+
 @app.route('/share', methods=['POST'])
 def share_file():
-
     users = load_users()
 
     wallet_address = request.form.get('wallet_address', '').strip()
-    print("wallet_address:", wallet_address)
-
-    # print("wallet_address:", wallet_address)
+    print("🪪 接收到钱包地址:", wallet_address)
 
     if wallet_address not in users:
         return jsonify({'success': False, 'message': '钱包未注册，请先连接钱包'})
     
     user_id = wallet_address
 
-    # if 'user_id' not in session:
-    #     return jsonify({'success': False, 'message': '请先连接钱包'})
-    # 为了测试，允许未登录用户使用默认测试账号
-    # if 'user_id' not in session:
-    #     # 使用默认测试账号
-    #     user_id = 'test0'
-    # else:
-    #     user_id = session['user_id']
-    
     filename = request.form.get('filename', '').strip()
     content = request.form.get('content', '').strip()
     authorize_rag = request.form.get('authorize_rag', 'false') == 'true'
@@ -1705,15 +1844,57 @@ def share_file():
     if not filename or not content:
         return jsonify({'success': False, 'message': '文件名和内容不能为空'})
     
-    file_id = save_shared_file(user_id, filename, content, authorize_rag)
+    print(f"📝 开始保存共享文件: 用户={user_id}, 文件名={filename}, 授权RAG={authorize_rag}")
+    
+    result = save_shared_file(user_id, filename, content, authorize_rag)
+
+    # 🎯 检查返回结果是否包含必要数据
+    file_id = result.get("file_id")
+    token_uri = result.get("token_uri")
+    preview_url = result.get("preview_url")
+    
+    print(f"📦 保存结果: file_id={file_id}, token_uri={token_uri}")
+    
+    if not token_uri:
+        print("⚠️ 警告: token_uri 为空!")
+        return jsonify({
+            'success': True,
+            'message': '文件分享成功，但无法生成Token URI',
+            'file_id': file_id,
+            'preview_url': preview_url,
+            'token_uri': None
+        })
     
     return jsonify({
-        'success': True, 
+        'success': True,
         'message': '文件分享成功',
-        'file_id': file_id
+        'file_id': file_id,
+        'token_uri': token_uri,
+        'preview_url': preview_url
     })
 
+@app.route("/api/nft_minted", methods=["POST"])
+def nft_minted():
+    data = request.get_json()
 
+    wallet_address = data.get("wallet_address")
+    contract_address = data.get("contract_address")
+    token_id = data.get("token_id")
+    token_uri = data.get("token_uri")
+    tx_hash = data.get("tx_hash")
+
+    print("===== NFT MINTED =====")
+    print("Wallet Address:", wallet_address)
+    print("Contract Address:", contract_address)
+    print("Token ID:", token_id)
+    print("Token URI:", token_uri)
+    print("Transaction Hash:", tx_hash)
+    print("======================")
+
+    return jsonify({
+        "success": True,
+        "message": "NFT mint info received"
+    })
 
 @app.route('/file_content/<file_id>')
 def get_file_content(file_id):
