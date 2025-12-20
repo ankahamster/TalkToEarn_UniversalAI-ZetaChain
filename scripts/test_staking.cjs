@@ -1,68 +1,80 @@
+// scripts/test_staking.cjs
 const hre = require("hardhat");
 const { ethers } = hre;
 
 async function main() {
   const [signer] = await ethers.getSigners();
-  console.log("🕵️  正在使用账户进行质押测试:", signer.address);
+  const me = signer.address;
+  const mgrAddr = "0xD7BF0f6Ec8Cb9b8f334cfe012D1021d54Dc273b4"; // Manager on Zeta
+  const wZetaAddr = "0x5F0b1a82749cb4E2278EC87F8BF6B618dC71a8bf"; // WZETA on Athens
+  const contentId = ethers.keccak256(ethers.toUtf8Bytes("exercise"));
+  const AMOUNT_STAKE = ethers.parseEther("0.1");
+  const REWARD_AMOUNT = ethers.parseEther("0.05");
 
-  // ================= 配置区域 =================
-  // 1. 你的 TalkToEarnManager 合约地址
-  const MANAGER_ADDR = "0xD7BF0f6Ec8Cb9b8f334cfe012D1021d54Dc273b4"; 
-  
-  // 2. 刚才验证过的 BSC Testnet ZRC20-BNB 地址 (硬编码)
-  const ZRC20_BNB_ADDR = "0xd97B1de3619ed2c6BEb3860147E30cA8A7dC9891"; 
-  // ===========================================
+  console.log("👤 Signer :", me);
 
-  // 连接 ZRC20 合约并检查余额
-  const zrc20 = await ethers.getContractAt("IZRC20", ZRC20_BNB_ADDR);
-  const balance = await zrc20.balanceOf(signer.address);
-  console.log(`\n💰 当前 ZRC20-BNB 余额: ${ethers.formatUnits(balance, 18)}`);
+  // WZETA 合约（含 approve/transfer）
+  const wZeta = await ethers.getContractAt(
+    [
+      "function deposit() payable",
+      "function approve(address,uint256) returns (bool)",
+      "function transfer(address,uint256) returns (bool)",
+      "function allowance(address,address) view returns (uint256)",
+      "function balanceOf(address) view returns (uint256)"
+    ],
+    wZetaAddr
+  );
 
-  // 准备质押 0.0001 个代币
-  const stakeAmount = ethers.parseUnits("0.0001", 18); 
+  // Manager 合约
+  const mgr = await ethers.getContractAt("TalkToEarnManager", mgrAddr);
 
-  if (balance < stakeAmount) {
-    console.error("❌ 余额不足！请先等待充值到账。");
-    return;
+  // wrap 如余额不足
+  const balZeta = await ethers.provider.getBalance(me);
+  const balWZeta = await wZeta.balanceOf(me);
+  if (balWZeta < AMOUNT_STAKE) {
+    const wrapAmt = AMOUNT_STAKE - balWZeta;
+    if (balZeta < wrapAmt) throw new Error("原生 ZETA 不足，先去 faucet 领");
+    console.log("💧 wrapping ZETA -> WZETA:", ethers.formatEther(wrapAmt));
+    await (await wZeta.deposit({ value: wrapAmt })).wait();
   }
 
-  // 连接 Manager 合约
-  const manager = await ethers.getContractAt("TalkToEarnManager", MANAGER_ADDR);
+  // 授权
+  const allow = await wZeta.allowance(me, mgrAddr);
+  if (allow < AMOUNT_STAKE) {
+    console.log("🔓 approve ...");
+    await (await wZeta.approve(mgrAddr, ethers.MaxUint256)).wait();
+  }
 
-  // 模拟一个 Content ID
-  const contentIdStr = "test-content-" + Date.now();
-  const contentId = ethers.keccak256(ethers.toUtf8Bytes(contentIdStr));
-  console.log(`🧪 准备对内容 ID 进行质押: ${contentId}`);
-
-  // 1. 授权 (Approve)
-  console.log("\n🔓 正在授权 Manager 合约扣款...");
-  const txApprove = await zrc20.approve(MANAGER_ADDR, stakeAmount);
-  await txApprove.wait();
-  console.log("   ✅ 授权成功");
-
-  // 2. 质押 (Stake)
-  console.log("\n🥩 正在执行质押...");
-  const txStake = await manager.stake(contentId, ZRC20_BNB_ADDR, stakeAmount);
-  console.log(`   Tx Hash: ${txStake.hash}`);
+  // 质押
+  console.log("🥩 staking", ethers.formatEther(AMOUNT_STAKE), "WZETA");
+  const txStake = await mgr.stake(contentId, wZetaAddr, AMOUNT_STAKE);
   await txStake.wait();
-  console.log("   ✅ 质押成功");
+  console.log("✅ stake tx:", txStake.hash);
 
-  // 3. 验证 (Verify)
-  console.log("\n🔍 验证链上数据...");
-  const stakeInfo = await manager.stakes(contentId, ZRC20_BNB_ADDR, signer.address);
-  // 注意：stakes 返回的是 struct，通常第一个字段是 amount
-  const stakedAmount = stakeInfo[0]; 
-  
-  console.log(`   合约记录的质押量: ${ethers.formatUnits(stakedAmount, 18)}`);
-  
-  if (stakedAmount == stakeAmount) {
-      console.log("🎉 测试完美通过！");
-  } else {
-      console.error("❌ 数据不匹配！");
-  }
+  // 给奖励池充值
+  console.log("💰 funding reward pool", ethers.formatEther(REWARD_AMOUNT));
+  await (await wZeta.transfer(mgrAddr, REWARD_AMOUNT)).wait();
+
+  // 分账
+  console.log("🎁 rewardOnUse ...");
+  const txReward = await mgr.rewardOnUse(contentId, wZetaAddr, REWARD_AMOUNT);
+  await txReward.wait();
+  console.log("✅ reward tx:", txReward.hash);
+
+  // 领取
+  console.log("🧾 claim ...");
+  const txClaim = await mgr.claim(contentId, wZetaAddr);
+  await txClaim.wait();
+  console.log("✅ claim tx:", txClaim.hash);
+
+  // 查看质押与余额
+  const stakeInfo = await mgr.stakes(contentId, wZetaAddr, me);
+  const myWZeta = await wZeta.balanceOf(me);
+  console.log("📊 staked:", ethers.formatEther(stakeInfo.amount));
+  console.log("💼 my WZETA:", ethers.formatEther(myWZeta));
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
 });
