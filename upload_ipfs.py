@@ -3,8 +3,8 @@ import json
 from io import BytesIO
 
 # Pinata API keys (请替换为自己的)
-PINATA_API_KEY = 'your-api-key'
-PINATA_API_SECRET = 'your-api-secret'
+PINATA_API_KEY = 'key'
+PINATA_API_SECRET = 'secret'
 PINATA_API_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS'
 PINATA_JSON_URL = 'https://api.pinata.cloud/pinning/pinJSONToIPFS'
 
@@ -78,7 +78,7 @@ def upload_text_and_get_preview_url(text_content: str,
     print(f"文本预览链接: {preview_url}")
     print(f"Metadata Token URI: {token_uri}")
     
-    return preview_url
+    return preview_url,token_uri
 
 # 示例：直接运行时测试
 if __name__ == "__main__":
