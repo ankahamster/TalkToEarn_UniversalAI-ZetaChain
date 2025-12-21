@@ -351,8 +351,9 @@ const Dashboard = () => {
                     rawValue: data.stats.data_nft.raw_value
                   },
                   { 
-                    label: "AI 调用次数", 
+                    label: "今日AI引用", 
                     value: data.stats.ai_calls.value, 
+                    // value: 22,
                     icon: Zap, 
                     color: "text-accent",
                     rawValue: data.stats.ai_calls.raw_value
