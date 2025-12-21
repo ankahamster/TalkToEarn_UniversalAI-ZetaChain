@@ -213,7 +213,7 @@ const Upload = () => {
                 onClick={handleReloadVectorStore}
                 disabled={isReloadingVectorStore}
                 variant="outline"
-                className="border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-900 hover:bg-blue-50 dark:hover:bg-blue-950"
+                className="border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-900 hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-700 dark:text-blue-300"
               >
                 {isReloadingVectorStore ? (
                   <>
@@ -222,7 +222,7 @@ const Upload = () => {
                   </>
                 ) : (
                   <>
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                    <RefreshCw className="mr-2 h-4 w-4 text-blue-700 dark:text-blue-300" />
                     重新加载知识库
                   </>
                 )}
@@ -316,24 +316,24 @@ const Upload = () => {
                 </Button>
                 
                 <Button
-                  onClick={handleReloadVectorStore}
-                  disabled={isReloadingVectorStore}
-                  variant="outline"
-                  className="flex-1"
-                  size="lg"
-                >
-                  {isReloadingVectorStore ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      重新加载中...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-2 h-5 w-5" />
-                      仅重新加载知识库
-                    </>
-                  )}
-                </Button>
+                onClick={handleReloadVectorStore}
+                disabled={isReloadingVectorStore}
+                variant="outline"
+                className="flex-1 text-blue-700 dark:text-blue-300"
+                size="lg"
+              >
+                {isReloadingVectorStore ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    重新加载中...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-5 w-5 text-blue-700 dark:text-blue-300" />
+                    仅重新加载知识库
+                  </>
+                )}
+              </Button>
               </div>
               
               <div className="text-sm text-muted-foreground p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-800">

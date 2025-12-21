@@ -350,5 +350,49 @@
     "file_id": null,
     "question": "为什么人类需要爱？",
     "timestamp": "2025-12-20T22:37:09.862781"
+  },
+  {
+    "id": "f2066668-d1cb-463b-a4f5-88872940d042",
+    "type": "spend",
+    "from_user": "0xeb2eb574be8001ef7ff3c60bd56caac4ed58fab2",
+    "to_user": "system",
+    "amount": 1e-06,
+    "file_owner": null,
+    "file_id": null,
+    "question": "为什么人类需要爱",
+    "timestamp": "2025-12-20T23:19:19.326734"
+  },
+  {
+    "id": "e2ea8b6e-6d35-4353-85e1-e6c5a7f839cc",
+    "type": "reward",
+    "from_user": null,
+    "to_user": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "amount": 1e-06,
+    "file_owner": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "file_id": "20251220024142_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "question": "为什么人类需要爱",
+    "timestamp": "2025-12-20T23:19:22.280719"
+  },
+  {
+    "id": "4c699a60-d8a6-4c64-9ff9-1c0fc5f5b8f1",
+    "type": "reference",
+    "from_user": "0xeb2eb574be8001ef7ff3c60bd56caac4ed58fab2",
+    "to_user": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "amount": 0.0,
+    "file_owner": "0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "file_id": "20251220024142_0x2e5f15e329b49d4b38ffdd100e0793780966ea6d",
+    "question": "为什么人类需要爱",
+    "timestamp": "2025-12-20T23:19:22.280740"
+  },
+  {
+    "id": "57a57c56-16e4-4727-9f4f-02f7b563bc93",
+    "type": "spend",
+    "from_user": "0xeb2eb574be8001ef7ff3c60bd56caac4ed58fab2",
+    "to_user": "system",
+    "amount": 1e-06,
+    "file_owner": null,
+    "file_id": null,
+    "question": "为什么人类需要爱？",
+    "timestamp": "2025-12-21T08:33:14.981531"
   }
 ]

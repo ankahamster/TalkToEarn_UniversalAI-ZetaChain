@@ -1458,6 +1458,8 @@ def hybrid_answering_strategy(question, relevant_docs, confidence):
     
     return strategy, prompt
 
+
+
 def init_vector_store(filepath=None, file_id=None, user_id=None, filename=None,ipfs_url=None):
     global vector_store
 
@@ -2167,12 +2169,25 @@ def reload_vector_store():
         
         # 清理旧的向量库
         import shutil
-        if os.path.exists('chroma_db'):
-            shutil.rmtree('chroma_db')
+        import time
+        import tempfile
+        
+        # 先设置vector_store为None，尝试释放资源
         vector_store = None
+        
+        # 给系统一些时间释放资源
+        time.sleep(0.5)
+        
+        # 使用临时目录来存储新的向量库
+        temp_chroma_db = tempfile.mkdtemp(prefix='chroma_db_temp_')
+        print(f"✅ 成功创建临时向量库目录: {temp_chroma_db}")
+        
+        # 备份原始的chroma_db路径
+        original_chroma_db = 'chroma_db'
         
         # 重新加载所有授权的文件
         for file_id, file_info in files.items():
+            print('-----',file_id)
             if file_info.get('authorize_rag', False):
                 # 优先使用content字段直接加载
                 content = file_info.get('content')
@@ -2182,7 +2197,35 @@ def reload_vector_store():
                 
                 if content and file_id:
                     try:
-                        add_content_to_vector_store(content, file_id, user_id, filename,ipfs_url)
+                        # 直接使用Chroma.from_documents创建新的向量库，而不是使用add_content_to_vector_store
+                        from langchain_core.documents import Document
+                        
+                        # 创建Document对象
+                        doc = Document(
+                            page_content=content,
+                            metadata={
+                                'file_id': file_id,
+                                'user_id': user_id,
+                                'filename': filename,
+                                'source': filename,
+                                'ipfs_url': ipfs_url
+                            }
+                        )
+                        
+                        # 分割文档
+                        text_splitter = TokenTextSplitter(chunk_size=500, chunk_overlap=100)
+                        docs = text_splitter.split_documents([doc])
+                        
+                        # 总是创建新的向量库或添加到新创建的向量库
+                        if vector_store is None:
+                            vector_store = Chroma.from_documents(
+                                documents=docs,
+                                embedding=embeddings,
+                                persist_directory=temp_chroma_db
+                            )
+                        else:
+                            vector_store.add_documents(docs)
+                        
                         authorized_files_count += 1
                         print(f"通过content加载文件到知识库: {filename} (ID: {file_id})")
                     except Exception as e:
@@ -2199,13 +2242,88 @@ def reload_vector_store():
                         
                         if os.path.exists(file_path):
                             try:
-                                add_file_to_vector_store(file_path, file_id, user_id, filename,ipfs_url)
+                                # 直接处理文件，而不是使用add_file_to_vector_store
+                                if file_path.lower().endswith('.pdf'):
+                                    loader = PyPDFLoader(file_path)
+                                    documents = loader.load()
+                                    print(f"PDF 加载成功，共 {len(documents)} 页")
+                                else:
+                                    with open(file_path, "rb") as f:
+                                        raw = f.read()
+                                        detected = chardet.detect(raw)
+                                        encoding = detected['encoding'] or 'utf-8'
+                                    encoding = 'utf-16' if 'utf-16' in encoding.lower() else encoding
+                                    encoding = 'gbk' if 'gb' in encoding.lower() else encoding
+                                    try:
+                                        loader = TextLoader(file_path, encoding=encoding)
+                                        documents = loader.load()
+                                        print(f"成功加载文本（{encoding}）: {len(documents)} 段")
+                                    except:
+                                        loader = TextLoader(file_path, encoding="utf-8", errors="ignore")
+                                        documents = loader.load()
+                                
+                                # 清理和处理文档
+                                cleaned_docs = []
+                                for doc in documents:
+                                    text = doc.page_content.replace('\ufeff', '').replace('\u200b', '').replace('\u3000', ' ').replace('\xa0', ' ').strip()
+                                    if not text:
+                                        text = f"（空文档，来源：{os.path.basename(file_path)}）"
+                                    doc.page_content = text
+                                    
+                                    doc.metadata['file_id'] = file_id
+                                    doc.metadata['user_id'] = user_id
+                                    doc.metadata['filename'] = filename
+                                    doc.metadata['ipfs_url'] = ipfs_url
+                                    doc.metadata['source'] = file_path
+                                    
+                                    cleaned_docs.append(doc)
+                                
+                                # 分割文档
+                                text_splitter = TokenTextSplitter(chunk_size=500, chunk_overlap=100)
+                                chunks = text_splitter.split_documents(cleaned_docs)
+                                
+                                # 添加到向量库
+                                if vector_store is None:
+                                    vector_store = Chroma.from_documents(
+                                        documents=chunks,
+                                        embedding=embeddings,
+                                        persist_directory=temp_chroma_db
+                                    )
+                                else:
+                                    vector_store.add_documents(chunks)
+                                
                                 authorized_files_count += 1
                                 print(f"通过file_path加载文件到知识库: {filename} (ID: {file_id})")
                             except Exception as e:
                                 print(f"file_path加载失败 {filename}: {e}")
         
         final_count = vector_store._collection.count() if vector_store else 0
+        
+        # 在返回结果之前，将临时目录的内容移动到原始的chroma_db目录
+        try:
+            # 确保释放向量库资源
+            vector_store = None
+            time.sleep(0.5)
+            
+            # 删除原始的chroma_db目录（如果存在）
+            if os.path.exists(original_chroma_db):
+                shutil.rmtree(original_chroma_db)
+                print(f"✅ 成功删除原始向量库目录: {original_chroma_db}")
+            
+            # 将临时目录重命名为原始的chroma_db目录
+            os.rename(temp_chroma_db, original_chroma_db)
+            print(f"✅ 成功将临时向量库目录移动到: {original_chroma_db}")
+            
+        except Exception as e:
+            print(f"⚠️  在处理向量库目录时出错: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # 重新初始化vector_store以使用新的目录
+        vector_store = Chroma(
+            persist_directory=original_chroma_db,
+            embedding_function=embeddings
+        )
         
         return jsonify({
             'success': True,
